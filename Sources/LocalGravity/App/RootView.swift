@@ -8,9 +8,11 @@
 //   4. LLM      -> P1-T7 (LLMClient)
 import SwiftUI
 import Combine
+import CoreLocation
 
 public struct RootView: View {
     @State private var lastResult: String = "tap a button to smoke-test a pillar"
+    @State private var showMap = false
     @StateObject private var locationModel = LocationModel()
     private let camera = Insta360CameraBridge()
 
@@ -34,7 +36,14 @@ public struct RootView: View {
             Button("2. Location start") {
                 locationModel.start { msg in lastResult = msg }
             }
-            Button("3. Map") { lastResult = "TODO P1-T6" }
+            Button("3. Map preview") { showMap = true }
+                .sheet(isPresented: $showMap) {
+                    MapPreviewView(track: [
+                        .init(latitude: 32.072, longitude: 118.794),
+                        .init(latitude: 32.074, longitude: 118.796),
+                        .init(latitude: 32.076, longitude: 118.797)
+                    ])
+                }
             Button("4. LLM") { lastResult = "TODO P1-T7" }
 
             Divider()
