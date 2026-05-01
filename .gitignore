@@ -1,3 +1,22 @@
 .superpowers/
 .DS_Store
 *.swp
+
+# Xcode (when migrating to .xcodeproj)
+build/
+DerivedData/
+*.xcuserstate
+xcuserdata/
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# SPM
+.build/
+.swiftpm/
+Package.resolved
+
+# Local secrets (real ones never committed)
+Resources/Secrets.plist
+Sources/LocalGravity/Resources/Secrets.plist
