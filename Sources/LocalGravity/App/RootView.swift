@@ -10,6 +10,7 @@ import SwiftUI
 
 public struct RootView: View {
     @State private var lastResult: String = "tap a button to smoke-test a pillar"
+    private let camera = Insta360CameraBridge()
 
     public init() {}
 
@@ -18,7 +19,16 @@ public struct RootView: View {
             Text("Local Gravity — pillars smoke test")
                 .font(.headline)
 
-            Button("1. Camera") { lastResult = "TODO P1-T4" }
+            Button("1. Camera connect") {
+                Task {
+                    do {
+                        try await camera.connect()
+                        lastResult = "camera connected"
+                    } catch {
+                        lastResult = "camera failed: \(error)"
+                    }
+                }
+            }
             Button("2. Location") { lastResult = "TODO P1-T5" }
             Button("3. Map") { lastResult = "TODO P1-T6" }
             Button("4. LLM") { lastResult = "TODO P1-T7" }
