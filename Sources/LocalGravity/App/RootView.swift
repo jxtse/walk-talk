@@ -7,9 +7,11 @@
 //   3. Map      -> P1-T6 (MapPreviewView)
 //   4. LLM      -> P1-T7 (LLMClient)
 import SwiftUI
+import Combine
 
 public struct RootView: View {
     @State private var lastResult: String = "tap a button to smoke-test a pillar"
+    @StateObject private var locationModel = LocationModel()
     private let camera = Insta360CameraBridge()
 
     public init() {}
@@ -29,7 +31,9 @@ public struct RootView: View {
                     }
                 }
             }
-            Button("2. Location") { lastResult = "TODO P1-T5" }
+            Button("2. Location start") {
+                locationModel.start { msg in lastResult = msg }
+            }
             Button("3. Map") { lastResult = "TODO P1-T6" }
             Button("4. LLM") { lastResult = "TODO P1-T7" }
 
@@ -47,3 +51,29 @@ public struct RootView: View {
 #if DEBUG
 #Preview { RootView() }
 #endif
+
+@MainActor
+public final class LocationModel: ObservableObject {
+    let svc = LocationSvc()
+
+    public init() {}
+
+    public func start(_ onUpdate: @escaping (String) -> Void) {
+        svc.requestPermission()
+        svc.start()
+        Task {
+            for _ in 0..<5 {
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                let n = svc.buffer.count
+                let last = svc.buffer.snapshot.last
+                await MainActor.run {
+                    if let p = last {
+                        onUpdate("\(n) points; last: \(p.coordinate.latitude), \(p.coordinate.longitude)")
+                    } else {
+                        onUpdate("\(n) points; waiting…")
+                    }
+                }
+            }
+        }
+    }
+}
