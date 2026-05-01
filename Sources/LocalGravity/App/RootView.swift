@@ -44,7 +44,20 @@ public struct RootView: View {
                         .init(latitude: 32.076, longitude: 118.797)
                     ])
                 }
-            Button("4. LLM") { lastResult = "TODO P1-T7" }
+            Button("4. LLM ping") {
+                Task {
+                    do {
+                        let resp = try await LLMClient().chat(ChatRequest(
+                            // Replace with model id chosen in decisions/A4-vlm-model-selection.md
+                            model: "REPLACE_WITH_MODEL_FROM_A4",
+                            messages: [ChatMessage(role: "user", content: "用一个字回应：到")]
+                        ))
+                        lastResult = "LLM: \(resp.choices.first?.message.content ?? "<empty>")"
+                    } catch {
+                        lastResult = "LLM failed: \(error)"
+                    }
+                }
+            }
 
             Divider()
             ScrollView {
