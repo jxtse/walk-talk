@@ -1852,3 +1852,1307 @@ git tag p1-done
 
 **End of Batch 1 (P1 Foundations).**
 
+---
+
+## P2 — Agent Skeleton (W3–W4)
+
+**Goal:** A working ReAct loop that, given mocked dependencies, makes correct decisions for the four canonical scenarios from spec §3:
+1. Passive Q&A: user asks "what flower is that" → calls `get_camera_frame` then `analyze_frame_vlm` then `speak_to_user`.
+2. Proactive recommendation: location-tick triggers → calls `amap_around_search`, decides whether to `speak_to_user`, **respects ≤3/10min quota**.
+3. Passive capture: user says "记一下" → calls `record_moment`, no speech.
+4. Direction: user says "带我去湖那边" → calls `amap_text_search` + `amap_direction_walking` + `speak_to_user`.
+
+All tools are unit-mocked. No camera, no real LLM, no AMap network calls. **The whole thing runs in the simulator.**
+
+**Pre-requisite:** P1 closed.
+
+---
+
+### Task P2-T1: Tool protocol and registry
+
+**Files:**
+- Create: `WalkTalk/Agent/Tool.swift`
+- Create: `WalkTalk/Agent/ToolRegistry.swift`
+- Create: `WalkTalkTests/Agent/ToolRegistryTests.swift`
+
+- [ ] **Step 1: Write the protocol**
+
+```swift
+// WalkTalk/Agent/Tool.swift
+import Foundation
+
+/// JSON-schema-style description of a tool, in the OpenAI function-calling shape.
+public struct ToolSpec: Codable, Equatable {
+    public struct Function: Codable, Equatable {
+        public let name: String
+        public let description: String
+        public let parameters: JSONValue   // JSON Schema
+    }
+    public let type: String   // always "function"
+    public let function: Function
+    public init(name: String, description: String, parameters: JSONValue) {
+        self.type = "function"
+        self.function = Function(name: name, description: description, parameters: parameters)
+    }
+}
+
+/// Minimal JSON value type so we can hand-build schemas in Swift.
+public indirect enum JSONValue: Codable, Equatable {
+    case string(String), number(Double), bool(Bool), null
+    case array([JSONValue]), object([String: JSONValue])
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.singleValueContainer()
+        if c.decodeNil() { self = .null; return }
+        if let b = try? c.decode(Bool.self) { self = .bool(b); return }
+        if let d = try? c.decode(Double.self) { self = .number(d); return }
+        if let s = try? c.decode(String.self) { self = .string(s); return }
+        if let a = try? c.decode([JSONValue].self) { self = .array(a); return }
+        if let o = try? c.decode([String: JSONValue].self) { self = .object(o); return }
+        throw DecodingError.dataCorruptedError(in: c, debugDescription: "unknown json")
+    }
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.singleValueContainer()
+        switch self {
+        case .null: try c.encodeNil()
+        case .bool(let b): try c.encode(b)
+        case .number(let n): try c.encode(n)
+        case .string(let s): try c.encode(s)
+        case .array(let a): try c.encode(a)
+        case .object(let o): try c.encode(o)
+        }
+    }
+}
+
+public protocol Tool {
+    var spec: ToolSpec { get }
+    /// Execute with raw JSON arguments (as the LLM emits). Returns a JSON-encodable result.
+    func invoke(arguments: JSONValue) async throws -> JSONValue
+}
+
+public enum ToolError: Error, Equatable {
+    case unknownTool(String)
+    case badArguments(String)
+    case underlying(String)
+}
+```
+
+- [ ] **Step 2: Write the registry**
+
+```swift
+// WalkTalk/Agent/ToolRegistry.swift
+import Foundation
+
+public final class ToolRegistry {
+    private(set) var tools: [String: Tool] = [:]
+
+    public init(_ tools: [Tool] = []) {
+        tools.forEach { register($0) }
+    }
+
+    public func register(_ tool: Tool) {
+        tools[tool.spec.function.name] = tool
+    }
+
+    public var specs: [ToolSpec] { Array(tools.values.map { $0.spec }) }
+
+    public func invoke(name: String, arguments: JSONValue) async throws -> JSONValue {
+        guard let t = tools[name] else { throw ToolError.unknownTool(name) }
+        return try await t.invoke(arguments: arguments)
+    }
+}
+```
+
+- [ ] **Step 3: Write tests with a fake tool**
+
+```swift
+// WalkTalkTests/Agent/ToolRegistryTests.swift
+import XCTest
+@testable import WalkTalk
+
+final class FakeEcho: Tool {
+    let spec = ToolSpec(
+        name: "echo",
+        description: "echo a string",
+        parameters: .object([
+            "type": .string("object"),
+            "properties": .object(["msg": .object(["type": .string("string")])]),
+            "required": .array([.string("msg")])
+        ])
+    )
+    func invoke(arguments: JSONValue) async throws -> JSONValue {
+        guard case .object(let o) = arguments, case .string(let s) = o["msg"] ?? .null
+        else { throw ToolError.badArguments("missing msg") }
+        return .object(["echo": .string(s)])
+    }
+}
+
+final class ToolRegistryTests: XCTestCase {
+    func test_register_and_invoke() async throws {
+        let reg = ToolRegistry([FakeEcho()])
+        let r = try await reg.invoke(name: "echo", arguments: .object(["msg": .string("hi")]))
+        guard case .object(let o) = r, case .string(let s) = o["echo"] ?? .null else {
+            return XCTFail("wrong shape")
+        }
+        XCTAssertEqual(s, "hi")
+    }
+
+    func test_unknownTool_throws() async {
+        let reg = ToolRegistry()
+        do { _ = try await reg.invoke(name: "nope", arguments: .null); XCTFail() }
+        catch ToolError.unknownTool(let n) { XCTAssertEqual(n, "nope") }
+        catch { XCTFail("\(error)") }
+    }
+}
+```
+
+- [ ] **Step 4: Run tests**
+
+`Cmd+U`. Expected: 2 new tests pass.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add WalkTalk/Agent/Tool.swift WalkTalk/Agent/ToolRegistry.swift WalkTalkTests/Agent
+git commit -m "feat(p2): Tool protocol + ToolRegistry"
+```
+
+---
+
+### Task P2-T2: ProactiveQuota — ≤ 3 / 10min
+
+**Files:**
+- Create: `WalkTalk/Agent/ProactiveQuota.swift`
+- Create: `WalkTalk/Util/Clock.swift`
+- Create: `WalkTalkTests/Agent/ProactiveQuotaTests.swift`
+
+- [ ] **Step 1: Injectable Clock**
+
+```swift
+// WalkTalk/Util/Clock.swift
+import Foundation
+public protocol Clock { func now() -> Date }
+public struct SystemClock: Clock { public init() {}; public func now() -> Date { Date() } }
+public final class FakeClock: Clock {
+    public var current: Date
+    public init(_ d: Date = Date(timeIntervalSince1970: 0)) { self.current = d }
+    public func now() -> Date { current }
+    public func advance(by sec: TimeInterval) { current.addTimeInterval(sec) }
+}
+```
+
+- [ ] **Step 2: ProactiveQuota implementation (TDD: write the tests first)**
+
+```swift
+// WalkTalkTests/Agent/ProactiveQuotaTests.swift
+import XCTest
+@testable import WalkTalk
+
+final class ProactiveQuotaTests: XCTestCase {
+    func test_emptyQuota_canSpeak() {
+        let q = ProactiveQuota(limit: 3, window: 600, clock: FakeClock())
+        XCTAssertTrue(q.canSpeak())
+    }
+
+    func test_threeWithinWindow_thenBlocked() {
+        let c = FakeClock()
+        let q = ProactiveQuota(limit: 3, window: 600, clock: c)
+        for _ in 0..<3 { q.recordSpoken() ; c.advance(by: 60) }
+        XCTAssertFalse(q.canSpeak())
+    }
+
+    func test_oldEntriesAge_outOfWindow() {
+        let c = FakeClock()
+        let q = ProactiveQuota(limit: 3, window: 600, clock: c)
+        q.recordSpoken()
+        c.advance(by: 700)        // > window
+        XCTAssertTrue(q.canSpeak())
+    }
+
+    func test_recordSpokenCountsImmediately() {
+        let c = FakeClock()
+        let q = ProactiveQuota(limit: 1, window: 600, clock: c)
+        q.recordSpoken()
+        XCTAssertFalse(q.canSpeak())
+    }
+}
+```
+
+- [ ] **Step 3: Run — expect compile failure (no `ProactiveQuota` yet)**
+
+`Cmd+U`. Expected: build error "cannot find 'ProactiveQuota' in scope".
+
+- [ ] **Step 4: Implement minimum to pass**
+
+```swift
+// WalkTalk/Agent/ProactiveQuota.swift
+import Foundation
+
+public final class ProactiveQuota {
+    private let limit: Int
+    private let window: TimeInterval
+    private let clock: Clock
+    private var stamps: [Date] = []
+    private let lock = NSLock()
+
+    public init(limit: Int = 3, window: TimeInterval = 600, clock: Clock = SystemClock()) {
+        self.limit = limit
+        self.window = window
+        self.clock = clock
+    }
+
+    public func canSpeak() -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        prune()
+        return stamps.count < limit
+    }
+
+    public func recordSpoken() {
+        lock.lock(); defer { lock.unlock() }
+        stamps.append(clock.now())
+        prune()
+    }
+
+    private func prune() {
+        let cutoff = clock.now().addingTimeInterval(-window)
+        stamps.removeAll { $0 < cutoff }
+    }
+}
+```
+
+- [ ] **Step 5: Run tests — should pass**
+
+`Cmd+U`. Expected: 4 tests pass.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add WalkTalk/Util/Clock.swift WalkTalk/Agent/ProactiveQuota.swift WalkTalkTests/Agent/ProactiveQuotaTests.swift
+git commit -m "feat(p2): ProactiveQuota with FakeClock-driven tests"
+```
+
+---
+
+### Task P2-T3: SystemPrompt — bake the AI behavior contract
+
+**Files:**
+- Create: `WalkTalk/Agent/SystemPrompt.swift`
+
+This is the **single source of truth** for the AI behavior contract from spec §4.1. Editing this file changes agent behavior; treat it as code.
+
+- [ ] **Step 1: Write the prompt as a Swift constant**
+
+```swift
+// WalkTalk/Agent/SystemPrompt.swift
+import Foundation
+
+public enum SystemPrompt {
+    /// Behavior contract baked into the agent's system message. Mirrors spec §4.1.
+    public static let text: String = """
+    你是「本地引力」散步同伴 AI。用户戴着耳机和影石相机散步，手机在口袋里。你只能通过语音被听到。
+
+    硬约束（绝对不可违反）：
+    1. 沉默是默认。没事不要说话。
+    2. 主动开口频率上限：≤ 3 次 / 10 分钟。这个配额由系统强制；如果系统告诉你 quota_exceeded，你必须沉默。
+    3. 主动开口仅有一种合法触发：当你判断附近有值得推荐给用户的地点（POI）时。其他主动场景一律禁止：
+       - 不要主动提示走神
+       - 不要主动指出 360° 哇时刻
+       - 不要主动判断「这个时刻值得记」
+    4. 「记一下/标个点/这个想法挺有意思」等用户明确语义信号时，调用 record_moment 工具，静默执行，不要回话。
+    5. 推荐被拒绝后，可以继续 chat 协商或换一个推荐，但本次主动配额已消耗。
+    6. 回答要短、口语化。耳机里听到 30 字以上的句子用户会烦。
+
+    工作方式：
+    - 你可以使用工具（function calling）。
+    - 想看用户视角时调用 get_camera_frame 然后 analyze_frame_vlm。
+    - 想知道附近有什么时调用 amap_around_search。
+    - 想说话时调用 speak_to_user。**直接说话不算数，必须通过 speak_to_user 工具发声。**
+    - 静默处理时，不调用 speak_to_user，但仍然返回简短的 reasoning 文本作为给系统的日志。
+    """
+}
+```
+
+- [ ] **Step 2: Commit (no test — prompt is data)**
+
+```bash
+git add WalkTalk/Agent/SystemPrompt.swift
+git commit -m "feat(p2): SystemPrompt mirrors spec §4.1 behavior contract"
+```
+
+---
+
+### Task P2-T4: Implement the 8 tools (mock-friendly versions)
+
+Each tool is small. We do them in one task with one commit per tool.
+
+**Files:**
+- Create: `WalkTalk/Agent/Tools/SpeakToUserTool.swift`
+- Create: `WalkTalk/Agent/Tools/RecordMomentTool.swift`
+- Create: `WalkTalk/Agent/Tools/GetCameraFrameTool.swift`
+- Create: `WalkTalk/Agent/Tools/AnalyzeFrameVLMTool.swift`
+- Create: `WalkTalk/Agent/Tools/AmapAroundSearchTool.swift`
+- Create: `WalkTalk/Agent/Tools/AmapTextSearchTool.swift`
+- Create: `WalkTalk/Agent/Tools/AmapDirectionTool.swift`
+- Create: `WalkTalk/Agent/Tools/AmapGeoTool.swift`
+- Create: `WalkTalk/Camera/FrameWindow.swift`
+- Create: `WalkTalk/Session/MomentLog.swift`
+- Create: `WalkTalkTests/Agent/ToolsTests.swift`
+
+- [ ] **Step 1: FrameWindow (5-min sliding window of frames)**
+
+```swift
+// WalkTalk/Camera/FrameWindow.swift
+import Foundation
+import UIKit
+
+public final class FrameWindow {
+    private let retention: TimeInterval
+    private var frames: [PreviewFrame] = []
+    private let lock = NSLock()
+    public init(retention: TimeInterval = 5 * 60) { self.retention = retention }
+
+    public func append(_ f: PreviewFrame) {
+        lock.lock(); defer { lock.unlock() }
+        frames.append(f)
+        let cutoff = Date().addingTimeInterval(-retention)
+        frames.removeAll { $0.capturedAt < cutoff }
+    }
+
+    /// Most recent frame at or before `t` (default = now).
+    public func latest(at t: Date = Date()) -> PreviewFrame? {
+        lock.lock(); defer { lock.unlock() }
+        return frames.last(where: { $0.capturedAt <= t })
+    }
+
+    public var count: Int { lock.lock(); defer { lock.unlock() }; return frames.count }
+    public func clear() { lock.lock(); defer { lock.unlock() }; frames.removeAll() }
+}
+```
+
+- [ ] **Step 2: MomentLog (in-memory, persisted later)**
+
+```swift
+// WalkTalk/Session/MomentLog.swift
+import Foundation
+import CoreLocation
+
+public struct Moment: Equatable {
+    public enum Kind: String, Codable { case idea, place, vibe }
+    public let kind: Kind
+    public let context: String
+    public let coordinate: CLLocationCoordinate2D?
+    public let timestamp: Date
+}
+
+public final class MomentLog {
+    private(set) public var moments: [Moment] = []
+    private let lock = NSLock()
+    public init() {}
+    public func add(_ m: Moment) { lock.lock(); defer { lock.unlock() }; moments.append(m) }
+    public func snapshot() -> [Moment] { lock.lock(); defer { lock.unlock() }; return moments }
+    public func clear() { lock.lock(); defer { lock.unlock() }; moments.removeAll() }
+}
+```
+
+- [ ] **Step 3: SpeakToUserTool**
+
+```swift
+// WalkTalk/Agent/Tools/SpeakToUserTool.swift
+import Foundation
+
+public protocol Speaker { func speak(_ text: String) async throws }
+
+public final class SpeakToUserTool: Tool {
+    public let spec = ToolSpec(
+        name: "speak_to_user",
+        description: "Speak the given text to the user via earphones. Must be brief and conversational.",
+        parameters: .object([
+            "type": .string("object"),
+            "properties": .object([
+                "text": .object(["type": .string("string"), "description": .string("≤30 字的口语")])
+            ]),
+            "required": .array([.string("text")])
+        ])
+    )
+    private let speaker: Speaker
+    private let quota: ProactiveQuota?
+    /// If `proactive` is true, decrements the quota (used for AI-initiated turns).
+    /// Passive replies pass `proactive: false`.
+    public init(speaker: Speaker, quota: ProactiveQuota? = nil) {
+        self.speaker = speaker; self.quota = quota
+    }
+
+    public func invoke(arguments: JSONValue) async throws -> JSONValue {
+        guard case .object(let o) = arguments, case .string(let text) = o["text"] ?? .null
+        else { throw ToolError.badArguments("missing text") }
+        if let quota, !quota.canSpeak() {
+            return .object(["status": .string("quota_exceeded")])
+        }
+        try await speaker.speak(text)
+        quota?.recordSpoken()
+        return .object(["status": .string("spoken")])
+    }
+}
+```
+
+- [ ] **Step 4: RecordMomentTool**
+
+```swift
+// WalkTalk/Agent/Tools/RecordMomentTool.swift
+import Foundation
+import CoreLocation
+
+public final class RecordMomentTool: Tool {
+    public let spec = ToolSpec(
+        name: "record_moment",
+        description: "Silently record a notable moment (idea/place/vibe) at the user's current GPS.",
+        parameters: .object([
+            "type": .string("object"),
+            "properties": .object([
+                "kind": .object(["type": .string("string"), "enum": .array([.string("idea"), .string("place"), .string("vibe")])]),
+                "context": .object(["type": .string("string")])
+            ]),
+            "required": .array([.string("kind"), .string("context")])
+        ])
+    )
+    private let log: MomentLog
+    private let trackBuffer: TrackBuffer
+    private let clock: Clock
+    public init(log: MomentLog, trackBuffer: TrackBuffer, clock: Clock = SystemClock()) {
+        self.log = log; self.trackBuffer = trackBuffer; self.clock = clock
+    }
+
+    public func invoke(arguments: JSONValue) async throws -> JSONValue {
+        guard case .object(let o) = arguments,
+              case .string(let kindStr) = o["kind"] ?? .null,
+              case .string(let ctx) = o["context"] ?? .null,
+              let kind = Moment.Kind(rawValue: kindStr)
+        else { throw ToolError.badArguments("kind+context required") }
+        let now = clock.now()
+        let coord = trackBuffer.snapshot.last?.coordinate
+        log.add(Moment(kind: kind, context: ctx, coordinate: coord, timestamp: now))
+        return .object(["status": .string("recorded")])
+    }
+}
+```
+
+- [ ] **Step 5: GetCameraFrameTool**
+
+```swift
+// WalkTalk/Agent/Tools/GetCameraFrameTool.swift
+import Foundation
+
+public final class GetCameraFrameTool: Tool {
+    public let spec = ToolSpec(
+        name: "get_camera_frame",
+        description: "Return the most recent camera preview frame as a base64 JPEG. Optionally accept timestamp_offset_sec to look back in time.",
+        parameters: .object([
+            "type": .string("object"),
+            "properties": .object([
+                "timestamp_offset_sec": .object(["type": .string("number"), "default": .number(0)])
+            ])
+        ])
+    )
+    private let window: FrameWindow
+    private let clock: Clock
+    public init(window: FrameWindow, clock: Clock = SystemClock()) {
+        self.window = window; self.clock = clock
+    }
+    public func invoke(arguments: JSONValue) async throws -> JSONValue {
+        var offset: Double = 0
+        if case .object(let o) = arguments, case .number(let n) = o["timestamp_offset_sec"] ?? .null {
+            offset = n
+        }
+        let target = clock.now().addingTimeInterval(-offset)
+        guard let f = window.latest(at: target) else {
+            return .object(["status": .string("no_frame")])
+        }
+        guard let jpeg = f.image.jpegData(compressionQuality: 0.7) else {
+            return .object(["status": .string("encode_failed")])
+        }
+        let b64 = jpeg.base64EncodedString()
+        return .object([
+            "status": .string("ok"),
+            "image_b64": .string(b64),
+            "captured_at": .string(ISO8601DateFormatter().string(from: f.capturedAt))
+        ])
+    }
+}
+```
+
+- [ ] **Step 6: AnalyzeFrameVLMTool**
+
+```swift
+// WalkTalk/Agent/Tools/AnalyzeFrameVLMTool.swift
+import Foundation
+
+public protocol VLMAnalyzer {
+    /// `imageB64` is JPEG base64; returns a short Chinese description / answer.
+    func analyze(imageB64: String, question: String) async throws -> String
+}
+
+public final class AnalyzeFrameVLMTool: Tool {
+    public let spec = ToolSpec(
+        name: "analyze_frame_vlm",
+        description: "Send an image (base64 JPEG) plus a question to the VLM and return the textual answer.",
+        parameters: .object([
+            "type": .string("object"),
+            "properties": .object([
+                "image_b64": .object(["type": .string("string")]),
+                "question": .object(["type": .string("string")])
+            ]),
+            "required": .array([.string("image_b64"), .string("question")])
+        ])
+    )
+    private let vlm: VLMAnalyzer
+    public init(vlm: VLMAnalyzer) { self.vlm = vlm }
+    public func invoke(arguments: JSONValue) async throws -> JSONValue {
+        guard case .object(let o) = arguments,
+              case .string(let img) = o["image_b64"] ?? .null,
+              case .string(let q) = o["question"] ?? .null
+        else { throw ToolError.badArguments("image_b64 + question required") }
+        do {
+            let answer = try await vlm.analyze(imageB64: img, question: q)
+            return .object(["status": .string("ok"), "answer": .string(answer)])
+        } catch {
+            return .object(["status": .string("vlm_failed"), "error": .string("\(error)")])
+        }
+    }
+}
+```
+
+- [ ] **Step 7: AmapAroundSearchTool**
+
+```swift
+// WalkTalk/Agent/Tools/AmapAroundSearchTool.swift
+import Foundation
+
+public final class AmapAroundSearchTool: Tool {
+    public let spec = ToolSpec(
+        name: "amap_around_search",
+        description: "Search POIs near the given lat/lng. Returns up to 10 POIs with name, type, address, distance.",
+        parameters: .object([
+            "type": .string("object"),
+            "properties": .object([
+                "lat": .object(["type": .string("number")]),
+                "lng": .object(["type": .string("number")]),
+                "keyword": .object(["type": .string("string")]),
+                "radius": .object(["type": .string("number"), "default": .number(1000)])
+            ]),
+            "required": .array([.string("lat"), .string("lng")])
+        ])
+    )
+    private let amap: AmapClient
+    public init(amap: AmapClient) { self.amap = amap }
+    public func invoke(arguments: JSONValue) async throws -> JSONValue {
+        guard case .object(let o) = arguments,
+              case .number(let lat) = o["lat"] ?? .null,
+              case .number(let lng) = o["lng"] ?? .null
+        else { throw ToolError.badArguments("lat,lng required") }
+        var keyword: String? = nil
+        if case .string(let k) = o["keyword"] ?? .null { keyword = k }
+        var radius = 1000
+        if case .number(let r) = o["radius"] ?? .null { radius = Int(r) }
+
+        do {
+            let pois = try await amap.aroundSearch(lat: lat, lng: lng, keyword: keyword, radius: radius)
+            let arr = pois.map { p in
+                JSONValue.object([
+                    "name": .string(p.name),
+                    "type": .string(p.type),
+                    "address": .string(p.address),
+                    "distance_m": .number(Double(p.distanceMeters ?? -1))
+                ])
+            }
+            return .object(["status": .string("ok"), "pois": .array(arr)])
+        } catch {
+            return .object(["status": .string("amap_failed"), "error": .string("\(error)")])
+        }
+    }
+}
+```
+
+- [ ] **Step 8: AmapTextSearchTool**
+
+```swift
+// WalkTalk/Agent/Tools/AmapTextSearchTool.swift
+import Foundation
+
+public final class AmapTextSearchTool: Tool {
+    public let spec = ToolSpec(
+        name: "amap_text_search",
+        description: "Keyword POI search by free-text query. Returns up to 10 POIs.",
+        parameters: .object([
+            "type": .string("object"),
+            "properties": .object([
+                "query": .object(["type": .string("string")]),
+                "region": .object(["type": .string("string")])
+            ]),
+            "required": .array([.string("query")])
+        ])
+    )
+    private let amap: AmapClient
+    public init(amap: AmapClient) { self.amap = amap }
+    public func invoke(arguments: JSONValue) async throws -> JSONValue {
+        guard case .object(let o) = arguments,
+              case .string(let q) = o["query"] ?? .null
+        else { throw ToolError.badArguments("query required") }
+        var region: String? = nil
+        if case .string(let r) = o["region"] ?? .null { region = r }
+        do {
+            let pois = try await amap.textSearch(query: q, region: region)
+            let arr = pois.map { p in
+                JSONValue.object([
+                    "name": .string(p.name),
+                    "type": .string(p.type),
+                    "address": .string(p.address),
+                    "lat": .number(p.coordinate.latitude),
+                    "lng": .number(p.coordinate.longitude)
+                ])
+            }
+            return .object(["status": .string("ok"), "pois": .array(arr)])
+        } catch {
+            return .object(["status": .string("amap_failed"), "error": .string("\(error)")])
+        }
+    }
+}
+```
+
+- [ ] **Step 9: AmapDirectionTool**
+
+```swift
+// WalkTalk/Agent/Tools/AmapDirectionTool.swift
+import Foundation
+import CoreLocation
+
+public final class AmapDirectionTool: Tool {
+    public let spec = ToolSpec(
+        name: "amap_direction_walking",
+        description: "Compute walking distance/duration and bearing from origin to destination. Use for 'guide me there', NOT for turn-by-turn nav.",
+        parameters: .object([
+            "type": .string("object"),
+            "properties": .object([
+                "from_lat": .object(["type": .string("number")]),
+                "from_lng": .object(["type": .string("number")]),
+                "to_lat": .object(["type": .string("number")]),
+                "to_lng": .object(["type": .string("number")]),
+            ]),
+            "required": .array([.string("from_lat"), .string("from_lng"), .string("to_lat"), .string("to_lng")])
+        ])
+    )
+    private let amap: AmapClient
+    public init(amap: AmapClient) { self.amap = amap }
+    public func invoke(arguments: JSONValue) async throws -> JSONValue {
+        guard case .object(let o) = arguments,
+              case .number(let fLat) = o["from_lat"] ?? .null,
+              case .number(let fLng) = o["from_lng"] ?? .null,
+              case .number(let tLat) = o["to_lat"] ?? .null,
+              case .number(let tLng) = o["to_lng"] ?? .null
+        else { throw ToolError.badArguments("4 coords required") }
+        do {
+            let d = try await amap.walkingDirection(
+                from: .init(latitude: fLat, longitude: fLng),
+                to: .init(latitude: tLat, longitude: tLng))
+            return .object([
+                "status": .string("ok"),
+                "distance_m": .number(Double(d.distanceMeters)),
+                "duration_s": .number(Double(d.durationSeconds)),
+                "bearing_deg": .number(d.bearingFromOrigin),
+                "compass": .string(Self.compass(d.bearingFromOrigin))
+            ])
+        } catch {
+            return .object(["status": .string("amap_failed"), "error": .string("\(error)")])
+        }
+    }
+    private static func compass(_ deg: Double) -> String {
+        let dirs = ["北","东北","东","东南","南","西南","西","西北"]
+        let idx = Int((deg + 22.5).truncatingRemainder(dividingBy: 360) / 45)
+        return dirs[idx]
+    }
+}
+```
+
+- [ ] **Step 10: AmapGeoTool**
+
+```swift
+// WalkTalk/Agent/Tools/AmapGeoTool.swift
+import Foundation
+
+public final class AmapGeoTool: Tool {
+    public let spec = ToolSpec(
+        name: "amap_regeocode",
+        description: "Reverse-geocode lat/lng to a Chinese formatted address.",
+        parameters: .object([
+            "type": .string("object"),
+            "properties": .object([
+                "lat": .object(["type": .string("number")]),
+                "lng": .object(["type": .string("number")])
+            ]),
+            "required": .array([.string("lat"), .string("lng")])
+        ])
+    )
+    private let amap: AmapClient
+    public init(amap: AmapClient) { self.amap = amap }
+    public func invoke(arguments: JSONValue) async throws -> JSONValue {
+        guard case .object(let o) = arguments,
+              case .number(let lat) = o["lat"] ?? .null,
+              case .number(let lng) = o["lng"] ?? .null
+        else { throw ToolError.badArguments("lat,lng required") }
+        do {
+            let r = try await amap.reverseGeocode(.init(latitude: lat, longitude: lng))
+            return .object(["status": .string("ok"), "address": .string(r.formattedAddress)])
+        } catch {
+            return .object(["status": .string("amap_failed"), "error": .string("\(error)")])
+        }
+    }
+}
+```
+
+- [ ] **Step 11: Tool unit tests**
+
+```swift
+// WalkTalkTests/Agent/ToolsTests.swift
+import XCTest
+import CoreLocation
+@testable import WalkTalk
+
+final class ToolsTests: XCTestCase {
+    // MARK: - Speaker
+    final class SpyEnv: Speaker, VLMAnalyzer {
+        var spoken: [String] = []
+        var vlmAnswer: String = "看起来像樱花"
+        func speak(_ text: String) async throws { spoken.append(text) }
+        func analyze(imageB64: String, question: String) async throws -> String { vlmAnswer }
+    }
+
+    func test_speakToUser_recordsAndConsumes() async throws {
+        let env = SpyEnv()
+        let q = ProactiveQuota(limit: 1, window: 600, clock: FakeClock())
+        let tool = SpeakToUserTool(speaker: env, quota: q)
+        let r = try await tool.invoke(arguments: .object(["text": .string("你好")]))
+        XCTAssertEqual(env.spoken, ["你好"])
+        guard case .object(let o) = r, case .string(let s) = o["status"] ?? .null else { return XCTFail() }
+        XCTAssertEqual(s, "spoken")
+        XCTAssertFalse(q.canSpeak())
+    }
+
+    func test_speakToUser_returnsQuotaExceeded() async throws {
+        let env = SpyEnv()
+        let q = ProactiveQuota(limit: 0, window: 600, clock: FakeClock())
+        let tool = SpeakToUserTool(speaker: env, quota: q)
+        let r = try await tool.invoke(arguments: .object(["text": .string("hi")]))
+        guard case .object(let o) = r, case .string(let s) = o["status"] ?? .null else { return XCTFail() }
+        XCTAssertEqual(s, "quota_exceeded")
+        XCTAssertTrue(env.spoken.isEmpty)
+    }
+
+    func test_recordMoment_writesToLog() async throws {
+        let log = MomentLog()
+        let buf = TrackBuffer()
+        buf.append(TrackPoint(coordinate: .init(latitude: 32.07, longitude: 118.79),
+                              timestamp: Date(), horizontalAccuracy: 5))
+        let tool = RecordMomentTool(log: log, trackBuffer: buf)
+        _ = try await tool.invoke(arguments: .object([
+            "kind": .string("idea"), "context": .string("研究 idea")
+        ]))
+        XCTAssertEqual(log.snapshot().count, 1)
+        XCTAssertEqual(log.snapshot().first?.kind, .idea)
+        XCTAssertNotNil(log.snapshot().first?.coordinate)
+    }
+
+    func test_getCameraFrame_returnsLatest() async throws {
+        let win = FrameWindow()
+        let img = UIGraphicsImageRenderer(size: .init(width: 4, height: 4)).image { ctx in
+            UIColor.red.setFill(); ctx.fill(.init(x: 0, y: 0, width: 4, height: 4))
+        }
+        win.append(PreviewFrame(image: img, capturedAt: Date()))
+        let tool = GetCameraFrameTool(window: win)
+        let r = try await tool.invoke(arguments: .object([:]))
+        guard case .object(let o) = r, case .string(let s) = o["status"] ?? .null else { return XCTFail() }
+        XCTAssertEqual(s, "ok")
+    }
+
+    func test_getCameraFrame_noFrame() async throws {
+        let tool = GetCameraFrameTool(window: FrameWindow())
+        let r = try await tool.invoke(arguments: .object([:]))
+        guard case .object(let o) = r, case .string(let s) = o["status"] ?? .null else { return XCTFail() }
+        XCTAssertEqual(s, "no_frame")
+    }
+
+    func test_analyzeFrameVLM_ok() async throws {
+        let env = SpyEnv()
+        let tool = AnalyzeFrameVLMTool(vlm: env)
+        let r = try await tool.invoke(arguments: .object([
+            "image_b64": .string("AAA"), "question": .string("what?")
+        ]))
+        guard case .object(let o) = r, case .string(let s) = o["answer"] ?? .null else { return XCTFail() }
+        XCTAssertEqual(s, "看起来像樱花")
+    }
+}
+```
+
+- [ ] **Step 12: Run tests**
+
+`Cmd+U`. Expected: 6 new tests pass.
+
+- [ ] **Step 13: Commit (all 8 tools + 2 supporting types + tests)**
+
+```bash
+git add WalkTalk/Agent/Tools WalkTalk/Camera/FrameWindow.swift WalkTalk/Session/MomentLog.swift WalkTalkTests/Agent/ToolsTests.swift
+git commit -m "feat(p2): 8 ReAct tools (speak/record/frame/vlm/amap×4) with tests"
+```
+
+---
+
+### Task P2-T5: LLMClient — function-calling extension
+
+**Files:**
+- Modify: `WalkTalk/Net/LLMClient.swift`
+- Modify: `WalkTalkTests/Net/LLMClientTests.swift`
+
+We extend `ChatRequest` / `ChatResponse` to carry tools and tool_calls per OpenAI's function-calling spec.
+
+- [ ] **Step 1: Extend the Codable types**
+
+Append to `LLMClient.swift`:
+
+```swift
+// MARK: - Function calling
+
+public struct ToolCall: Codable, Equatable {
+    public struct Function: Codable, Equatable {
+        public let name: String
+        public let arguments: String   // JSON-encoded string per OpenAI spec
+    }
+    public let id: String
+    public let type: String   // "function"
+    public let function: Function
+}
+
+public struct AssistantMessageWithTools: Codable, Equatable {
+    public let role: String
+    public let content: String?
+    public let tool_calls: [ToolCall]?
+}
+
+public struct ChatRequestWithTools: Codable {
+    public let model: String
+    public let messages: [JSONValue]    // raw JSON to allow tool/assistant message shapes
+    public let tools: [ToolSpec]?
+    public let tool_choice: String?     // "auto" | "none"
+    public let temperature: Double?
+    public init(model: String, messages: [JSONValue], tools: [ToolSpec]?, toolChoice: String? = "auto", temperature: Double? = nil) {
+        self.model = model; self.messages = messages; self.tools = tools
+        self.tool_choice = toolChoice; self.temperature = temperature
+    }
+}
+
+public struct ChatResponseWithTools: Codable {
+    public struct Choice: Codable {
+        public let message: AssistantMessageWithTools
+        public let finish_reason: String?
+    }
+    public let choices: [Choice]
+}
+
+extension LLMClient {
+    public func chatWithTools(_ request: ChatRequestWithTools) async throws -> ChatResponseWithTools {
+        var url = endpoint
+        url.append(path: "/v1/chat/completions")
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        req.httpBody = try JSONEncoder().encode(request)
+        let (data, response) = try await session.data(for: req)
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            throw LLMClientError.http((response as? HTTPURLResponse)?.statusCode ?? -1,
+                                       String(data: data, encoding: .utf8) ?? "")
+        }
+        return try JSONDecoder().decode(ChatResponseWithTools.self, from: data)
+    }
+}
+```
+
+Also expose `endpoint`, `apiKey`, `session` to internal scope so the extension can read them — change their `private` declarations to `internal`:
+
+```swift
+internal let endpoint: URL
+internal let apiKey: String
+internal let session: URLSession
+```
+
+- [ ] **Step 2: Test parsing of a tool-call response**
+
+Append to `LLMClientTests.swift`:
+
+```swift
+final class LLMClientToolCallTests: XCTestCase {
+    func test_parsesToolCall() async throws {
+        let json = #"""
+        {"choices":[{"message":{"role":"assistant","content":null,"tool_calls":[
+          {"id":"c1","type":"function","function":{"name":"speak_to_user","arguments":"{\"text\":\"你好\"}"}}
+        ]},"finish_reason":"tool_calls"}]}
+        """#
+        let cfg = URLSessionConfiguration.ephemeral
+        cfg.protocolClasses = [StubURLProtocol.self]
+        StubURLProtocol.responder = { req in
+            let r = HTTPURLResponse(url: req.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+            return (r, json.data(using: .utf8)!)
+        }
+        let client = LLMClient(endpoint: URL(string: "http://stub/v1")!, apiKey: "k",
+                               session: URLSession(configuration: cfg))
+        let resp = try await client.chatWithTools(ChatRequestWithTools(
+            model: "m",
+            messages: [.object(["role": .string("user"), "content": .string("hi")])],
+            tools: nil
+        ))
+        XCTAssertEqual(resp.choices.first?.message.tool_calls?.first?.function.name, "speak_to_user")
+    }
+}
+```
+
+- [ ] **Step 3: Run tests**
+
+`Cmd+U`. Expected: new test passes.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add WalkTalk/Net/LLMClient.swift WalkTalkTests/Net/LLMClientTests.swift
+git commit -m "feat(p2): LLMClient.chatWithTools for function-calling"
+```
+
+---
+
+### Task P2-T6: AgentRuntime — the ReAct loop
+
+**Files:**
+- Create: `WalkTalk/Agent/AgentRuntime.swift`
+- Create: `WalkTalkTests/Agent/AgentRuntimeTests.swift`
+
+This is the centerpiece of P2.
+
+- [ ] **Step 1: Define the runtime**
+
+```swift
+// WalkTalk/Agent/AgentRuntime.swift
+import Foundation
+
+public enum AgentTrigger {
+    case userSpoke(String)             // STT result
+    case locationTick                  // periodic timer; agent decides whether to recommend
+    case sessionEnded                  // (used in P5; agent emits a final wrap-up)
+}
+
+public struct AgentTurnResult {
+    public let toolCalls: [(name: String, args: JSONValue, result: JSONValue)]
+    public let finalContent: String?   // last assistant text, if any
+}
+
+public final class AgentRuntime {
+    private let llm: LLMClient
+    private let model: String
+    private let tools: ToolRegistry
+    private let systemPrompt: String
+    private let maxIterations: Int
+
+    public init(llm: LLMClient,
+                model: String,
+                tools: ToolRegistry,
+                systemPrompt: String = SystemPrompt.text,
+                maxIterations: Int = 6) {
+        self.llm = llm; self.model = model; self.tools = tools
+        self.systemPrompt = systemPrompt; self.maxIterations = maxIterations
+    }
+
+    public func handle(_ trigger: AgentTrigger, contextHints: [String: String] = [:]) async throws -> AgentTurnResult {
+        let triggerMsg = Self.triggerDescription(trigger, hints: contextHints)
+        var messages: [JSONValue] = [
+            .object(["role": .string("system"), "content": .string(systemPrompt)]),
+            .object(["role": .string("user"), "content": .string(triggerMsg)])
+        ]
+
+        var collected: [(String, JSONValue, JSONValue)] = []
+        var finalText: String? = nil
+
+        for _ in 0..<maxIterations {
+            let req = ChatRequestWithTools(
+                model: model,
+                messages: messages,
+                tools: tools.specs,
+                toolChoice: "auto",
+                temperature: 0.4
+            )
+            let resp = try await llm.chatWithTools(req)
+            guard let choice = resp.choices.first else { break }
+            let msg = choice.message
+
+            // Append assistant message to history
+            var assistantObj: [String: JSONValue] = [
+                "role": .string("assistant"),
+                "content": msg.content.map(JSONValue.string) ?? .null
+            ]
+            if let calls = msg.tool_calls {
+                let arr = calls.map { c in
+                    JSONValue.object([
+                        "id": .string(c.id),
+                        "type": .string("function"),
+                        "function": .object([
+                            "name": .string(c.function.name),
+                            "arguments": .string(c.function.arguments)
+                        ])
+                    ])
+                }
+                assistantObj["tool_calls"] = .array(arr)
+            }
+            messages.append(.object(assistantObj))
+
+            // If no tool calls, we're done.
+            guard let calls = msg.tool_calls, !calls.isEmpty else {
+                finalText = msg.content
+                break
+            }
+
+            // Execute each tool call sequentially (simplest correct semantics).
+            for call in calls {
+                let argsJson = call.function.arguments.data(using: .utf8) ?? Data()
+                let args = (try? JSONDecoder().decode(JSONValue.self, from: argsJson)) ?? .null
+                let result: JSONValue
+                do {
+                    result = try await tools.invoke(name: call.function.name, arguments: args)
+                } catch {
+                    result = .object(["status": .string("tool_error"),
+                                      "error": .string("\(error)")])
+                }
+                collected.append((call.function.name, args, result))
+                let resultStr = (try? String(data: JSONEncoder().encode(result), encoding: .utf8)) ?? "null"
+                messages.append(.object([
+                    "role": .string("tool"),
+                    "tool_call_id": .string(call.id),
+                    "name": .string(call.function.name),
+                    "content": .string(resultStr ?? "null")
+                ]))
+            }
+        }
+
+        return AgentTurnResult(toolCalls: collected, finalContent: finalText)
+    }
+
+    private static func triggerDescription(_ t: AgentTrigger, hints: [String: String]) -> String {
+        let h = hints.map { "[\($0.key)=\($0.value)]" }.joined(separator: " ")
+        switch t {
+        case .userSpoke(let s):
+            return "用户刚说：\(s)\n\(h)"
+        case .locationTick:
+            return "系统位置 tick：现在是检查附近是否值得推荐 POI 的时机。\n\(h)"
+        case .sessionEnded:
+            return "散步结束。简短告别。\n\(h)"
+        }
+    }
+}
+```
+
+- [ ] **Step 2: Build a "scripted LLM" to drive the agent in tests**
+
+Add to `WalkTalkTests/Agent/AgentRuntimeTests.swift`:
+
+```swift
+// WalkTalkTests/Agent/AgentRuntimeTests.swift
+import XCTest
+@testable import WalkTalk
+
+/// A LLM stand-in that returns a pre-scripted sequence of responses, ignoring inputs.
+final class ScriptedLLM {
+    private let scripts: [String]   // raw JSON response bodies, in order
+    private var idx = 0
+    init(_ scripts: [String]) { self.scripts = scripts }
+    func makeClient() -> LLMClient {
+        let cfg = URLSessionConfiguration.ephemeral
+        cfg.protocolClasses = [StubURLProtocol.self]
+        StubURLProtocol.responder = { [self] req in
+            let body = scripts[min(idx, scripts.count - 1)]
+            idx += 1
+            let r = HTTPURLResponse(url: req.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+            return (r, body.data(using: .utf8)!)
+        }
+        return LLMClient(endpoint: URL(string: "http://stub/v1")!, apiKey: "k",
+                         session: URLSession(configuration: cfg))
+    }
+}
+
+private func toolCallResponse(name: String, args: String) -> String {
+    """
+    {"choices":[{"message":{"role":"assistant","content":null,"tool_calls":[
+      {"id":"c1","type":"function","function":{"name":"\(name)","arguments":\(args.jsonEscaped)}}
+    ]},"finish_reason":"tool_calls"}]}
+    """
+}
+private func finalResponse(_ text: String) -> String {
+    """
+    {"choices":[{"message":{"role":"assistant","content":"\(text)"},"finish_reason":"stop"}]}
+    """
+}
+private extension String {
+    /// Wrap self as a JSON string literal (for embedding in another JSON document).
+    var jsonEscaped: String {
+        let data = try! JSONEncoder().encode(self)
+        return String(data: data, encoding: .utf8)!
+    }
+}
+
+final class AgentRuntimeTests: XCTestCase {
+    final class SpySpeaker: Speaker {
+        var spoken: [String] = []
+        func speak(_ text: String) async throws { spoken.append(text) }
+    }
+
+    func test_agentCallsToolThenFinishes() async throws {
+        let speaker = SpySpeaker()
+        let scripted = ScriptedLLM([
+            toolCallResponse(name: "speak_to_user", args: #"{"text":"你好"}"#),
+            finalResponse("done")
+        ])
+        let llm = scripted.makeClient()
+        let registry = ToolRegistry([SpeakToUserTool(speaker: speaker, quota: nil)])
+        let agent = AgentRuntime(llm: llm, model: "m", tools: registry)
+        let result = try await agent.handle(.userSpoke("hi"))
+        XCTAssertEqual(speaker.spoken, ["你好"])
+        XCTAssertEqual(result.toolCalls.count, 1)
+        XCTAssertEqual(result.finalContent, "done")
+    }
+
+    func test_quotaExceeded_doesNotInvokeSpeaker() async throws {
+        let speaker = SpySpeaker()
+        let q = ProactiveQuota(limit: 0, window: 600, clock: FakeClock())
+        let scripted = ScriptedLLM([
+            toolCallResponse(name: "speak_to_user", args: #"{"text":"hi"}"#),
+            finalResponse("ok")
+        ])
+        let registry = ToolRegistry([SpeakToUserTool(speaker: speaker, quota: q)])
+        let agent = AgentRuntime(llm: scripted.makeClient(), model: "m", tools: registry)
+        _ = try await agent.handle(.locationTick)
+        XCTAssertTrue(speaker.spoken.isEmpty)
+    }
+
+    func test_recordMoment_doesNotSpeak() async throws {
+        let log = MomentLog()
+        let buf = TrackBuffer()
+        let scripted = ScriptedLLM([
+            toolCallResponse(name: "record_moment",
+                             args: #"{"kind":"idea","context":"研究 idea"}"#),
+            finalResponse("")
+        ])
+        let registry = ToolRegistry([RecordMomentTool(log: log, trackBuffer: buf)])
+        let agent = AgentRuntime(llm: scripted.makeClient(), model: "m", tools: registry)
+        _ = try await agent.handle(.userSpoke("记一下这个想法"))
+        XCTAssertEqual(log.snapshot().count, 1)
+    }
+}
+```
+
+- [ ] **Step 3: Run tests**
+
+`Cmd+U`. Expected: 3 new tests pass. **If any fail, fix before continuing — the rest of P2/P3 depends on this loop.**
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add WalkTalk/Agent/AgentRuntime.swift WalkTalkTests/Agent/AgentRuntimeTests.swift
+git commit -m "feat(p2): AgentRuntime ReAct loop with tool dispatch"
+```
+
+---
+
+### Task P2-T7: Live agent smoke test (real LLM, mocked tools)
+
+**Files:**
+- Modify: `WalkTalk/App/RootView.swift`
+
+A button in RootView that runs the real LLM against the real tool registry, with mocked Speaker/VLM/Amap. Confirms the prompt + tool specs compose into something the live model actually uses correctly.
+
+- [ ] **Step 1: Add the button**
+
+```swift
+Button("5. Agent dry-run") {
+    Task {
+        let speaker = LoggingSpeaker { lastResult.append("\nspoken: \($0)") }
+        let registry = ToolRegistry([
+            SpeakToUserTool(speaker: speaker, quota: nil),
+            RecordMomentTool(log: MomentLog(), trackBuffer: TrackBuffer())
+        ])
+        let agent = AgentRuntime(
+            llm: LLMClient(),
+            model: "REPLACE_WITH_MODEL_FROM_A4",
+            tools: registry
+        )
+        do {
+            let r = try await agent.handle(.userSpoke("帮我打个招呼"))
+            lastResult = "tool calls: \(r.toolCalls.map(\.name))\ntext: \(r.finalContent ?? "<none>")"
+        } catch {
+            lastResult = "agent failed: \(error)"
+        }
+    }
+}
+
+final class LoggingSpeaker: Speaker {
+    let onSpeak: (String) -> Void
+    init(_ f: @escaping (String) -> Void) { onSpeak = f }
+    func speak(_ text: String) async throws { onSpeak(text) }
+}
+```
+
+- [ ] **Step 2: Run on device with VPN active**
+
+Tap "Agent dry-run". Expected: agent calls `speak_to_user` once with a short greeting, no other tools.
+
+- [ ] **Step 3: Iterate prompt if needed**
+
+If the live model misbehaves (e.g., always tries to use unimplemented tools, ignores quota), update `SystemPrompt.swift` and re-run. Each prompt change is its own commit.
+
+- [ ] **Step 4: Commit current prompt + RootView**
+
+```bash
+git add WalkTalk/App/RootView.swift WalkTalk/Agent/SystemPrompt.swift
+git commit -m "feat(p2): live agent dry-run from RootView"
+```
+
+---
+
+### Task P2-T8: P2 close-out
+
+**Files:**
+- Create: `docs/superpowers/plans/checkpoints/P2-closeout.md`
+
+- [ ] **Step 1: Run full test suite**
+
+`Cmd+U`. Expected: all green.
+
+- [ ] **Step 2: Document live-model observations**
+
+```markdown
+# P2 close-out
+
+**Date:** YYYY-MM-DD
+**Tests:** all passing
+**Live agent observations (model = <name>):**
+- Greeting scenario: <pass/fail + notes>
+- Quota respected when overridden: <pass/fail>
+- Did model invent any non-existent tool name? <yes/no, examples>
+
+**Prompt iterations made:** <list>
+**Open issues going into P3:** <list>
+```
+
+- [ ] **Step 3: Commit and tag**
+
+```bash
+git add docs/superpowers/plans/checkpoints/P2-closeout.md
+git commit -m "docs(p2): close-out checkpoint"
+git tag p2-done
+```
+
+---
+
+**End of Batch 2 (P2 Agent Skeleton).**
+
