@@ -4106,3 +4106,989 @@ git tag p3-done
 
 **End of Batch 3 (P3 Walk Loop).**
 
+---
+
+## P4 — Keepsake v1 / Poster fallback (W7–W8)
+
+**Goal:** After every walk, **always** produce one shareable artifact: a long poster image. This is the floor — even if the camera died, the LLM was unreachable for parts of the walk, the diffusion API failed, etc., we still hand the user a poster (degraded gracefully).
+
+**Pre-requisite:** P3 closed (a real walk produces a usable raw video and a moment log).
+
+---
+
+### Task P4-T1: MaterialCollector — gather everything KeepsakeBuilder needs
+
+**Files:**
+- Create: `WalkTalk/Keepsake/MaterialCollector.swift`
+- Create: `WalkTalk/Keepsake/KeepsakeMaterials.swift`
+- Create: `WalkTalkTests/Keepsake/MaterialCollectorTests.swift`
+
+- [ ] **Step 1: Materials value type**
+
+```swift
+// WalkTalk/Keepsake/KeepsakeMaterials.swift
+import Foundation
+import CoreLocation
+
+public struct KeepsakeMaterials: Equatable {
+    public let track: [TrackPoint]
+    public let moments: [Moment]
+    public let dialog: [DialogTurn]
+    public let videoURL: URL?
+    public let startedAt: Date
+    public let endedAt: Date
+
+    public var durationSeconds: Double { endedAt.timeIntervalSince(startedAt) }
+    public var distanceMeters: Double {
+        var total: Double = 0
+        for i in 1..<track.count {
+            let a = CLLocation(latitude: track[i-1].coordinate.latitude, longitude: track[i-1].coordinate.longitude)
+            let b = CLLocation(latitude: track[i].coordinate.latitude, longitude: track[i].coordinate.longitude)
+            total += b.distance(from: a)
+        }
+        return total
+    }
+}
+
+public struct DialogTurn: Equatable, Codable {
+    public enum Speaker: String, Codable { case user, assistant }
+    public let speaker: Speaker
+    public let text: String
+    public let timestamp: Date
+}
+```
+
+- [ ] **Step 2: Add a DialogLog to capture turns during the walk**
+
+Append to `WalkTalk/Session/MomentLog.swift` (or a new file `DialogLog.swift`):
+
+```swift
+// WalkTalk/Session/DialogLog.swift
+import Foundation
+
+public final class DialogLog {
+    private(set) public var turns: [DialogTurn] = []
+    private let lock = NSLock()
+    public init() {}
+    public func append(_ t: DialogTurn) { lock.lock(); defer { lock.unlock() }; turns.append(t) }
+    public func snapshot() -> [DialogTurn] { lock.lock(); defer { lock.unlock() }; return turns }
+    public func clear() { lock.lock(); defer { lock.unlock() }; turns.removeAll() }
+}
+```
+
+- [ ] **Step 3: Wire DialogLog in WalkController**
+
+Modify `WalkController.swift`:
+
+- Add stored property: `public let dialog = DialogLog()`
+- In `handleUtterance`, after `agent.handle`, capture `result.toolCalls` for `speak_to_user` to log assistant turns; log the user utterance immediately.
+
+```swift
+private func handleUtterance(_ text: String) {
+    dialog.append(DialogTurn(speaker: .user, text: text, timestamp: Date()))
+    Task { [weak self] in
+        guard let self else { return }
+        do {
+            let hints = self.currentHints()
+            let result = try await self.agent.handle(.userSpoke(text), contextHints: hints)
+            for tc in result.toolCalls where tc.name == "speak_to_user" {
+                if case .object(let o) = tc.args, case .string(let said) = o["text"] ?? .null {
+                    await MainActor.run {
+                        self.dialog.append(DialogTurn(speaker: .assistant, text: said, timestamp: Date()))
+                    }
+                }
+            }
+        } catch {
+            print("agent error on utterance: \(error)")
+        }
+    }
+}
+```
+
+Do the same in `fireLocationTick` for any `speak_to_user` issued proactively.
+
+- [ ] **Step 4: MaterialCollector**
+
+```swift
+// WalkTalk/Keepsake/MaterialCollector.swift
+import Foundation
+
+public final class MaterialCollector {
+    public init() {}
+    public func collect(from controller: WalkController, startedAt: Date, endedAt: Date, videoURL: URL?) -> KeepsakeMaterials {
+        KeepsakeMaterials(
+            track: controller.location.buffer.snapshot,
+            moments: controller.moments.snapshot(),
+            dialog: controller.dialog.snapshot(),
+            videoURL: videoURL,
+            startedAt: startedAt,
+            endedAt: endedAt
+        )
+    }
+}
+```
+
+- [ ] **Step 5: Tests**
+
+```swift
+// WalkTalkTests/Keepsake/MaterialCollectorTests.swift
+import XCTest
+import CoreLocation
+@testable import WalkTalk
+
+final class MaterialCollectorTests: XCTestCase {
+    func test_distanceMeters_sumsHaversine() {
+        let now = Date()
+        let mats = KeepsakeMaterials(
+            track: [
+                TrackPoint(coordinate: .init(latitude: 32.07, longitude: 118.79), timestamp: now, horizontalAccuracy: 5),
+                TrackPoint(coordinate: .init(latitude: 32.08, longitude: 118.80), timestamp: now.addingTimeInterval(60), horizontalAccuracy: 5)
+            ],
+            moments: [], dialog: [], videoURL: nil,
+            startedAt: now, endedAt: now.addingTimeInterval(60)
+        )
+        XCTAssertGreaterThan(mats.distanceMeters, 1000)  // ~1.4 km
+    }
+
+    func test_emptyTrack_zeroDistance() {
+        let now = Date()
+        let mats = KeepsakeMaterials(track: [], moments: [], dialog: [], videoURL: nil,
+                                     startedAt: now, endedAt: now)
+        XCTAssertEqual(mats.distanceMeters, 0)
+    }
+}
+```
+
+- [ ] **Step 6: Run tests**
+
+`Cmd+U`. Expected: 2 new pass.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add WalkTalk/Keepsake WalkTalk/Session/DialogLog.swift WalkTalk/Session/WalkController.swift WalkTalkTests/Keepsake
+git commit -m "feat(p4): MaterialCollector + DialogLog wired into WalkController"
+```
+
+---
+
+### Task P4-T2: MapRenderer — real basemap snapshot
+
+**Files:**
+- Modify: `WalkTalk/Map/MapRenderer.swift`
+
+Replace the P1 stub with a real 高德 SDK snapshot.
+
+- [ ] **Step 1: Use MAMapView's snapshot API**
+
+```swift
+// WalkTalk/Map/MapRenderer.swift
+import Foundation
+import CoreLocation
+import UIKit
+// LOOKUP-AMAP-6: import MAMapKit
+
+public final class MapRenderer {
+    public init() {}
+
+    public func renderStatic(track: [CLLocationCoordinate2D], size: CGSize) async throws -> UIImage {
+        // LOOKUP-AMAP-7: use MAMapView snapshot APIs:
+        //   let mv = MAMapView(frame: CGRect(origin: .zero, size: size))
+        //   mv.zoomLevel = bestZoomFor(track)
+        //   mv.centerCoordinate = centerOf(track)
+        //   let coords = track
+        //   let line = MAPolyline(coordinates: coords, count: UInt(coords.count))
+        //   mv.add(line)
+        //   return await withCheckedContinuation { cont in
+        //       mv.takeSnapshot(in: mv.bounds) { img, _ in cont.resume(returning: img ?? Self.placeholder(size)) }
+        //   }
+        return Self.placeholder(size)
+    }
+
+    private static func placeholder(_ size: CGSize) -> UIImage {
+        UIGraphicsBeginImageContext(size)
+        UIColor.systemGray5.setFill(); UIRectFill(CGRect(origin: .zero, size: size))
+        let img = UIGraphicsGetImageFromCurrentImageContext() ?? UIImage()
+        UIGraphicsEndImageContext()
+        return img
+    }
+}
+```
+
+- [ ] **Step 2: Hook up center & zoom helpers (pure logic, can test)**
+
+Append to the same file:
+
+```swift
+public extension MapRenderer {
+    static func center(of track: [CLLocationCoordinate2D]) -> CLLocationCoordinate2D {
+        guard !track.isEmpty else { return CLLocationCoordinate2D(latitude: 0, longitude: 0) }
+        let lat = track.map { $0.latitude }.reduce(0, +) / Double(track.count)
+        let lng = track.map { $0.longitude }.reduce(0, +) / Double(track.count)
+        return .init(latitude: lat, longitude: lng)
+    }
+
+    /// Coarse zoom heuristic: bigger bounding box → smaller zoom.
+    static func zoomLevel(for track: [CLLocationCoordinate2D]) -> Double {
+        guard let lats = track.map(\.latitude).minMax(),
+              let lngs = track.map(\.longitude).minMax()
+        else { return 16 }
+        let span = max(lats.max - lats.min, lngs.max - lngs.min)
+        switch span {
+        case 0..<0.005: return 17
+        case 0.005..<0.02: return 15
+        case 0.02..<0.1: return 13
+        case 0.1..<0.5: return 11
+        default: return 9
+        }
+    }
+}
+
+private extension Array where Element == Double {
+    func minMax() -> (min: Double, max: Double)? {
+        guard let mn = self.min(), let mx = self.max() else { return nil }
+        return (mn, mx)
+    }
+}
+```
+
+- [ ] **Step 3: Test the helpers**
+
+```swift
+// WalkTalkTests/Map/MapRendererTests.swift
+import XCTest
+import CoreLocation
+@testable import WalkTalk
+
+final class MapRendererTests: XCTestCase {
+    func test_center_averages() {
+        let c = MapRenderer.center(of: [
+            .init(latitude: 0, longitude: 0),
+            .init(latitude: 2, longitude: 4)
+        ])
+        XCTAssertEqual(c.latitude, 1, accuracy: 0.0001)
+        XCTAssertEqual(c.longitude, 2, accuracy: 0.0001)
+    }
+
+    func test_zoom_smallSpan_isHigh() {
+        let z = MapRenderer.zoomLevel(for: [
+            .init(latitude: 32.072, longitude: 118.794),
+            .init(latitude: 32.073, longitude: 118.795)
+        ])
+        XCTAssertEqual(z, 17)
+    }
+
+    func test_zoom_largeSpan_isLow() {
+        let z = MapRenderer.zoomLevel(for: [
+            .init(latitude: 30, longitude: 110),
+            .init(latitude: 35, longitude: 120)
+        ])
+        XCTAssertEqual(z, 9)
+    }
+}
+```
+
+- [ ] **Step 4: Run tests**
+
+`Cmd+U`. Expected: 3 new pass.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add WalkTalk/Map/MapRenderer.swift WalkTalkTests/Map
+git commit -m "feat(p4): MapRenderer center/zoom helpers + snapshot LOOKUP scaffold"
+```
+
+---
+
+### Task P4-T3: ScriptGenerator — one LLM call → structured "script"
+
+**Files:**
+- Create: `WalkTalk/Keepsake/ScriptGenerator.swift`
+- Create: `WalkTalkTests/Keepsake/ScriptGeneratorTests.swift`
+
+- [ ] **Step 1: Define the script struct**
+
+```swift
+// WalkTalk/Keepsake/ScriptGenerator.swift
+import Foundation
+
+public struct KeepsakeScript: Codable, Equatable {
+    public struct VideoClip: Codable, Equatable {
+        public let startSec: Double
+        public let durationSec: Double
+        public let caption: String
+    }
+    public let title: String           // ≤ 14 字
+    public let narration: String       // 1-2 句诗意总结
+    public let posterPrompt: String    // diffusion prompt (英文，便于模型理解)
+    public let videoClips: [VideoClip]
+    public let bgmTag: String          // "calm" | "contemplative" | "upbeat"
+    public let highlightMomentIds: [Int] // indices into materials.moments
+
+    enum CodingKeys: String, CodingKey {
+        case title, narration
+        case posterPrompt = "poster_prompt"
+        case videoClips = "video_clips"
+        case bgmTag = "bgm_tag"
+        case highlightMomentIds = "highlight_moment_ids"
+    }
+}
+
+public final class ScriptGenerator {
+    private let llm: LLMClient
+    private let model: String
+    public init(llm: LLMClient, model: String) { self.llm = llm; self.model = model }
+
+    public func generate(_ m: KeepsakeMaterials) async throws -> KeepsakeScript {
+        let materialsSummary = Self.summarize(m)
+        let req = ChatRequest(
+            model: model,
+            messages: [
+                ChatMessage(role: "system", content: Self.systemPrompt),
+                ChatMessage(role: "user", content: materialsSummary)
+            ],
+            temperature: 0.7
+        )
+        let resp = try await llm.chat(req)
+        guard let raw = resp.choices.first?.message.content else {
+            throw ScriptGeneratorError.noContent
+        }
+        let json = Self.extractJSON(from: raw)
+        guard let data = json.data(using: .utf8) else { throw ScriptGeneratorError.parse("not utf8") }
+        do {
+            return try JSONDecoder().decode(KeepsakeScript.self, from: data)
+        } catch {
+            throw ScriptGeneratorError.parse("\(error). raw=\(raw)")
+        }
+    }
+
+    static let systemPrompt: String = """
+    你是「散步纪念品」的剧本生成器。基于下面的散步素材，输出严格 JSON：
+    {
+      "title": "≤14 字的标题",
+      "narration": "1-2 句诗意总结（≤60 字）",
+      "poster_prompt": "english diffusion prompt for a square illustrated poster of this walk; reference time of day, mood, key landmarks",
+      "video_clips": [
+        {"start_sec": 12.5, "duration_sec": 4.0, "caption": "一句字幕"}
+      ],
+      "bgm_tag": "calm | contemplative | upbeat",
+      "highlight_moment_ids": [0, 2]
+    }
+
+    要求：
+    - video_clips 选 3–5 段，每段 3–6 秒，从用户散步视频中分散选取，避开开头 5 秒和结尾 5 秒
+    - 字幕用中文
+    - 不要解释，不要 markdown，只输出 JSON
+    """
+
+    private static func summarize(_ m: KeepsakeMaterials) -> String {
+        let f = ISO8601DateFormatter()
+        var lines: [String] = []
+        lines.append("散步起止：\(f.string(from: m.startedAt)) → \(f.string(from: m.endedAt))")
+        lines.append("时长：\(Int(m.durationSeconds))秒；距离：\(Int(m.distanceMeters))米；轨迹点：\(m.track.count)")
+        lines.append("视频文件：\(m.videoURL?.lastPathComponent ?? "无")")
+        lines.append("\n=== 关键时刻（moments）===")
+        for (i, mo) in m.moments.enumerated() {
+            lines.append("[\(i)] \(mo.kind.rawValue) @ \(f.string(from: mo.timestamp)): \(mo.context)")
+        }
+        lines.append("\n=== 对话精华（最多 20 轮）===")
+        for t in m.dialog.suffix(20) {
+            lines.append("\(t.speaker.rawValue): \(t.text)")
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    private static func extractJSON(from raw: String) -> String {
+        // Tolerate accidental code fences.
+        if let start = raw.range(of: "{"), let end = raw.range(of: "}", options: .backwards),
+           start.lowerBound < end.upperBound {
+            return String(raw[start.lowerBound...end.upperBound])
+        }
+        return raw
+    }
+}
+
+public enum ScriptGeneratorError: Error, Equatable {
+    case noContent
+    case parse(String)
+}
+```
+
+- [ ] **Step 2: Tests with stubbed LLM**
+
+```swift
+// WalkTalkTests/Keepsake/ScriptGeneratorTests.swift
+import XCTest
+@testable import WalkTalk
+
+final class ScriptGeneratorTests: XCTestCase {
+    func test_parsesValidScript() async throws {
+        let json = #"""
+        {"choices":[{"message":{"role":"assistant","content":
+        "{\"title\":\"湖边的下午\",\"narration\":\"风从水面拂过\",\"poster_prompt\":\"watercolor lake afternoon\",\"video_clips\":[{\"start_sec\":10,\"duration_sec\":4,\"caption\":\"樱花\"}],\"bgm_tag\":\"calm\",\"highlight_moment_ids\":[0]}"
+        }}]}
+        """#
+        let cfg = URLSessionConfiguration.ephemeral
+        cfg.protocolClasses = [StubURLProtocol.self]
+        StubURLProtocol.responder = { req in
+            let r = HTTPURLResponse(url: req.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+            return (r, json.data(using: .utf8)!)
+        }
+        let client = LLMClient(endpoint: URL(string: "http://stub/v1")!, apiKey: "k",
+                               session: URLSession(configuration: cfg))
+        let now = Date()
+        let mats = KeepsakeMaterials(track: [], moments: [], dialog: [], videoURL: nil,
+                                     startedAt: now, endedAt: now.addingTimeInterval(1800))
+        let script = try await ScriptGenerator(llm: client, model: "m").generate(mats)
+        XCTAssertEqual(script.title, "湖边的下午")
+        XCTAssertEqual(script.videoClips.first?.caption, "樱花")
+    }
+
+    func test_throwsOnGarbage() async {
+        let cfg = URLSessionConfiguration.ephemeral
+        cfg.protocolClasses = [StubURLProtocol.self]
+        StubURLProtocol.responder = { req in
+            let r = HTTPURLResponse(url: req.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+            return (r, #"{"choices":[{"message":{"content":"not json at all"}}]}"#.data(using: .utf8)!)
+        }
+        let client = LLMClient(endpoint: URL(string: "http://stub/v1")!, apiKey: "k",
+                               session: URLSession(configuration: cfg))
+        let now = Date()
+        let mats = KeepsakeMaterials(track: [], moments: [], dialog: [], videoURL: nil,
+                                     startedAt: now, endedAt: now)
+        do { _ = try await ScriptGenerator(llm: client, model: "m").generate(mats); XCTFail() }
+        catch ScriptGeneratorError.parse { /* ok */ }
+        catch { XCTFail("\(error)") }
+    }
+}
+```
+
+- [ ] **Step 3: Run tests**
+
+`Cmd+U`. Expected: 2 new pass.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add WalkTalk/Keepsake/ScriptGenerator.swift WalkTalkTests/Keepsake/ScriptGeneratorTests.swift
+git commit -m "feat(p4): ScriptGenerator emits structured KeepsakeScript"
+```
+
+---
+
+### Task P4-T4: DiffusionClient — one-shot poster image generation
+
+**Files:**
+- Create: `WalkTalk/Net/DiffusionClient.swift`
+- Create: `WalkTalkTests/Net/DiffusionClientTests.swift`
+
+- [ ] **Step 1: Implement against the same OpenAI-compatible endpoint**
+
+```swift
+// WalkTalk/Net/DiffusionClient.swift
+import Foundation
+import UIKit
+
+public final class DiffusionClient {
+    private let endpoint: URL
+    private let apiKey: String
+    private let model: String
+    private let session: URLSession
+
+    public init(endpoint: URL = Secrets.shared.llmEndpoint,
+                apiKey: String = Secrets.shared.llmApiKey,
+                model: String = "dall-e-3",   // adjust per A4/A6 / endpoint catalog
+                session: URLSession = .shared) {
+        self.endpoint = endpoint; self.apiKey = apiKey
+        self.model = model; self.session = session
+    }
+
+    public func generate(prompt: String, size: String = "1024x1024") async throws -> UIImage {
+        var url = endpoint; url.append(path: "/v1/images/generations")
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        let body: [String: Any] = ["model": model, "prompt": prompt, "size": size, "n": 1, "response_format": "b64_json"]
+        req.httpBody = try JSONSerialization.data(withJSONObject: body)
+        let (data, resp) = try await session.data(for: req)
+        guard let http = resp as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            throw DiffusionError.http((resp as? HTTPURLResponse)?.statusCode ?? -1)
+        }
+        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let arr = json["data"] as? [[String: Any]],
+              let b64 = arr.first?["b64_json"] as? String,
+              let imgData = Data(base64Encoded: b64),
+              let img = UIImage(data: imgData)
+        else { throw DiffusionError.decoding }
+        return img
+    }
+}
+
+public enum DiffusionError: Error, Equatable {
+    case http(Int)
+    case decoding
+}
+```
+
+- [ ] **Step 2: Test (stubbed response with a tiny embedded PNG)**
+
+```swift
+// WalkTalkTests/Net/DiffusionClientTests.swift
+import XCTest
+@testable import WalkTalk
+
+final class DiffusionClientTests: XCTestCase {
+    /// 1×1 black PNG — known-good base64.
+    static let blackPixelB64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkAAIAAAoAAv/lxKUAAAAASUVORK5CYII="
+
+    func test_decodesB64Image() async throws {
+        let json = #"{"data":[{"b64_json":"\#(Self.blackPixelB64)"}]}"#
+        let cfg = URLSessionConfiguration.ephemeral
+        cfg.protocolClasses = [StubURLProtocol.self]
+        StubURLProtocol.responder = { req in
+            let r = HTTPURLResponse(url: req.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+            return (r, json.data(using: .utf8)!)
+        }
+        let client = DiffusionClient(endpoint: URL(string: "http://stub/v1")!,
+                                     apiKey: "k", model: "m",
+                                     session: URLSession(configuration: cfg))
+        let img = try await client.generate(prompt: "x")
+        XCTAssertEqual(img.size, CGSize(width: 1, height: 1))
+    }
+}
+```
+
+- [ ] **Step 3: Run tests**
+
+`Cmd+U`. Expected: 1 new pass.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add WalkTalk/Net/DiffusionClient.swift WalkTalkTests/Net/DiffusionClientTests.swift
+git commit -m "feat(p4): DiffusionClient one-shot image generation"
+```
+
+---
+
+### Task P4-T5: PosterComposer — assemble the long poster
+
+**Files:**
+- Create: `WalkTalk/Keepsake/PosterComposer.swift`
+- Create: `WalkTalkTests/Keepsake/PosterComposerTests.swift`
+
+- [ ] **Step 1: Compose**
+
+```swift
+// WalkTalk/Keepsake/PosterComposer.swift
+import Foundation
+import UIKit
+
+public final class PosterComposer {
+    public init() {}
+
+    /// Returns a tall poster image. Layout:
+    ///   ┌─────────────┐
+    ///   │  AI poster  │ 1024x1024
+    ///   ├─────────────┤
+    ///   │  title      │
+    ///   │  narration  │
+    ///   ├─────────────┤
+    ///   │  map track  │ 1024x600
+    ///   ├─────────────┤
+    ///   │  stats      │
+    ///   │  highlights │
+    ///   └─────────────┘
+    public func compose(script: KeepsakeScript,
+                        materials: KeepsakeMaterials,
+                        aiPoster: UIImage?,
+                        mapImage: UIImage?) -> UIImage {
+        let width: CGFloat = 1024
+        let aiH: CGFloat = aiPoster != nil ? 1024 : 0
+        let mapH: CGFloat = mapImage != nil ? 600 : 0
+        let textBlockH: CGFloat = 280
+        let statsH: CGFloat = 220 + CGFloat(min(materials.moments.count, 5)) * 40
+        let total = aiH + textBlockH + mapH + statsH + 80
+
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: width, height: total))
+        return renderer.image { ctx in
+            UIColor(white: 0.98, alpha: 1).setFill()
+            ctx.fill(CGRect(x: 0, y: 0, width: width, height: total))
+
+            var y: CGFloat = 0
+            if let ai = aiPoster {
+                ai.draw(in: CGRect(x: 0, y: y, width: width, height: aiH))
+                y += aiH
+            }
+
+            // Title + narration block
+            y += 40
+            let title = NSAttributedString(string: script.title, attributes: [
+                .font: UIFont.systemFont(ofSize: 56, weight: .bold),
+                .foregroundColor: UIColor.label
+            ])
+            title.draw(at: CGPoint(x: 60, y: y))
+            y += 80
+
+            let narration = NSAttributedString(string: script.narration, attributes: [
+                .font: UIFont.systemFont(ofSize: 28, weight: .regular),
+                .foregroundColor: UIColor.secondaryLabel
+            ])
+            narration.draw(in: CGRect(x: 60, y: y, width: width - 120, height: 120))
+            y += 160
+
+            if let map = mapImage {
+                map.draw(in: CGRect(x: 0, y: y, width: width, height: mapH))
+                y += mapH
+            }
+
+            // Stats
+            y += 40
+            let stats = NSAttributedString(string: Self.statsLine(materials), attributes: [
+                .font: UIFont.systemFont(ofSize: 24, weight: .medium),
+                .foregroundColor: UIColor.label
+            ])
+            stats.draw(at: CGPoint(x: 60, y: y))
+            y += 60
+
+            for mo in materials.moments.prefix(5) {
+                let line = "• \(mo.context)"
+                NSAttributedString(string: line, attributes: [
+                    .font: UIFont.systemFont(ofSize: 22),
+                    .foregroundColor: UIColor.secondaryLabel
+                ]).draw(at: CGPoint(x: 80, y: y))
+                y += 36
+            }
+        }
+    }
+
+    private static func statsLine(_ m: KeepsakeMaterials) -> String {
+        let mins = Int(m.durationSeconds / 60)
+        let km = m.distanceMeters / 1000.0
+        return String(format: "%d 分钟 · %.2f 公里 · %d 个时刻", mins, km, m.moments.count)
+    }
+}
+```
+
+- [ ] **Step 2: Tests (no rendering content correctness; only that an image is produced and roughly sized)**
+
+```swift
+// WalkTalkTests/Keepsake/PosterComposerTests.swift
+import XCTest
+@testable import WalkTalk
+
+final class PosterComposerTests: XCTestCase {
+    private func script() -> KeepsakeScript {
+        .init(title: "测试", narration: "narration", posterPrompt: "p",
+              videoClips: [], bgmTag: "calm", highlightMomentIds: [])
+    }
+    private func mats() -> KeepsakeMaterials {
+        let now = Date()
+        return KeepsakeMaterials(track: [], moments: [], dialog: [], videoURL: nil,
+                                 startedAt: now, endedAt: now.addingTimeInterval(900))
+    }
+
+    func test_producesNonEmptyImage_evenWithoutAiPosterOrMap() {
+        let img = PosterComposer().compose(script: script(), materials: mats(),
+                                           aiPoster: nil, mapImage: nil)
+        XCTAssertGreaterThan(img.size.height, 100)
+        XCTAssertEqual(img.size.width, 1024)
+    }
+
+    func test_includesAllVerticalSections_whenSuppliedImagesExist() {
+        let dummy = UIGraphicsImageRenderer(size: .init(width: 100, height: 100)).image { ctx in
+            UIColor.red.setFill(); ctx.fill(.init(x: 0, y: 0, width: 100, height: 100))
+        }
+        let img = PosterComposer().compose(script: script(), materials: mats(),
+                                           aiPoster: dummy, mapImage: dummy)
+        XCTAssertGreaterThan(img.size.height, 1500)
+    }
+}
+```
+
+- [ ] **Step 3: Run tests**
+
+`Cmd+U`. Expected: 2 new pass.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add WalkTalk/Keepsake/PosterComposer.swift WalkTalkTests/Keepsake/PosterComposerTests.swift
+git commit -m "feat(p4): PosterComposer assembles long poster image"
+```
+
+---
+
+### Task P4-T6: KeepsakeBuilder v1 — orchestrate, with hard fallback
+
+**Files:**
+- Create: `WalkTalk/Keepsake/KeepsakeBuilder.swift`
+- Create: `WalkTalk/Keepsake/KeepsakeFallback.swift`
+- Create: `WalkTalkTests/Keepsake/KeepsakeBuilderTests.swift`
+
+- [ ] **Step 1: Fallback decision logic**
+
+```swift
+// WalkTalk/Keepsake/KeepsakeFallback.swift
+import Foundation
+
+public enum KeepsakeOutput: Equatable {
+    case poster(URL)        // path to PNG
+    case video(URL)         // path to MP4 (P5)
+}
+
+public enum KeepsakeFailure: Error, Equatable {
+    case scriptFailed(String)
+    case allFailed(String)
+}
+```
+
+- [ ] **Step 2: Builder**
+
+```swift
+// WalkTalk/Keepsake/KeepsakeBuilder.swift
+import Foundation
+import UIKit
+
+public final class KeepsakeBuilder {
+    private let scripter: ScriptGenerator
+    private let diffusion: DiffusionClient
+    private let mapRenderer: MapRenderer
+    private let composer: PosterComposer
+
+    public init(scripter: ScriptGenerator,
+                diffusion: DiffusionClient = DiffusionClient(),
+                mapRenderer: MapRenderer = MapRenderer(),
+                composer: PosterComposer = PosterComposer()) {
+        self.scripter = scripter
+        self.diffusion = diffusion
+        self.mapRenderer = mapRenderer
+        self.composer = composer
+    }
+
+    /// Always returns a path. Will fall back to a "fail-safe poster" (script-less) on script error.
+    public func buildPoster(materials: KeepsakeMaterials, outputDir: URL) async throws -> URL {
+        // 1. Script (fall back to a hand-built one if the LLM fails)
+        let script: KeepsakeScript
+        do { script = try await scripter.generate(materials) }
+        catch {
+            script = Self.failsafeScript(materials)
+        }
+
+        // 2. Parallel: poster + map (each independently fallback-safe)
+        async let aiPosterT: UIImage? = (try? await diffusion.generate(prompt: script.posterPrompt))
+        async let mapT: UIImage? = (try? await mapRenderer.renderStatic(
+            track: materials.track.map(\.coordinate),
+            size: CGSize(width: 1024, height: 600)
+        ))
+        let aiPoster = await aiPosterT
+        let map = await mapT
+
+        // 3. Compose (always succeeds — composer tolerates nil inputs)
+        let img = composer.compose(script: script, materials: materials,
+                                   aiPoster: aiPoster, mapImage: map)
+
+        // 4. Write to disk
+        try FileManager.default.createDirectory(at: outputDir, withIntermediateDirectories: true)
+        let url = outputDir.appendingPathComponent("poster-\(UUID().uuidString).png")
+        guard let data = img.pngData() else {
+            throw KeepsakeFailure.allFailed("png encode failed")
+        }
+        try data.write(to: url)
+        return url
+    }
+
+    private static func failsafeScript(_ m: KeepsakeMaterials) -> KeepsakeScript {
+        .init(
+            title: "一段散步",
+            narration: "脚步会记得这条路。",
+            posterPrompt: "abstract minimalist watercolor of a quiet walking path",
+            videoClips: [],
+            bgmTag: "calm",
+            highlightMomentIds: Array(m.moments.indices.prefix(3))
+        )
+    }
+}
+```
+
+- [ ] **Step 3: Wire into WalkController.onGenerateKeepsake**
+
+Edit `WalkController.init` (the part that sets up `session.onGenerateKeepsake`):
+
+```swift
+session.onGenerateKeepsake = { [weak self] in
+    guard let self else { throw KeepsakeFailure.allFailed("controller gone") }
+    let collector = MaterialCollector()
+    let mats = collector.collect(
+        from: self,
+        startedAt: self.walkStartedAt ?? Date(),
+        endedAt: Date(),
+        videoURL: self.downloadedVideoURL
+    )
+    let builder = KeepsakeBuilder(scripter: ScriptGenerator(llm: self.llm, model: self.model))
+    let outDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        .appendingPathComponent("keepsakes", isDirectory: true)
+    return try await builder.buildPoster(materials: mats, outputDir: outDir)
+}
+```
+
+You'll need to add `private let llm: LLMClient`, `private let model: String`, `private var walkStartedAt: Date?` to `WalkController` and set `walkStartedAt = Date()` at the top of `startEverything()`.
+
+- [ ] **Step 4: Tests with mocks for the LLM/diffusion**
+
+```swift
+// WalkTalkTests/Keepsake/KeepsakeBuilderTests.swift
+import XCTest
+@testable import WalkTalk
+
+final class KeepsakeBuilderTests: XCTestCase {
+
+    /// Test that even a totally failing LLM still produces a poster.
+    func test_builderProducesPoster_whenLLMFails() async throws {
+        let cfg = URLSessionConfiguration.ephemeral
+        cfg.protocolClasses = [StubURLProtocol.self]
+        StubURLProtocol.responder = { req in
+            let r = HTTPURLResponse(url: req.url!, statusCode: 500, httpVersion: nil, headerFields: nil)!
+            return (r, "boom".data(using: .utf8)!)
+        }
+        let session = URLSession(configuration: cfg)
+        let llm = LLMClient(endpoint: URL(string: "http://stub/v1")!, apiKey: "k", session: session)
+        let diffusion = DiffusionClient(endpoint: URL(string: "http://stub/v1")!, apiKey: "k", model: "m", session: session)
+        let scripter = ScriptGenerator(llm: llm, model: "m")
+        let builder = KeepsakeBuilder(scripter: scripter, diffusion: diffusion)
+        let now = Date()
+        let mats = KeepsakeMaterials(track: [], moments: [], dialog: [], videoURL: nil,
+                                     startedAt: now, endedAt: now.addingTimeInterval(900))
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let url = try await builder.buildPoster(materials: mats, outputDir: dir)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))
+        let attrs = try FileManager.default.attributesOfItem(atPath: url.path)
+        XCTAssertGreaterThan((attrs[.size] as? Int) ?? 0, 1000)   // non-trivial PNG
+    }
+}
+```
+
+- [ ] **Step 5: Run tests**
+
+`Cmd+U`. Expected: 1 new pass.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add WalkTalk/Keepsake WalkTalk/Session/WalkController.swift WalkTalkTests/Keepsake/KeepsakeBuilderTests.swift
+git commit -m "feat(p4): KeepsakeBuilder v1 with hard fallback path (poster always produced)"
+```
+
+---
+
+### Task P4-T7: WalkScreen — show keepsake + share sheet
+
+**Files:**
+- Modify: `WalkTalk/App/WalkScreen.swift`
+
+- [ ] **Step 1: Add image preview + ShareLink**
+
+```swift
+import SwiftUI
+
+struct WalkScreen: View {
+    @StateObject var controller: WalkController
+
+    var body: some View {
+        VStack(spacing: 20) {
+            Text("本地引力").font(.largeTitle).bold()
+
+            switch controller.session.state {
+            case .idle:
+                Button("出门散步") { Task { try? await controller.session.handle(.start) } }
+                    .buttonStyle(.borderedProminent)
+
+            case .walking:
+                Text("散步进行中…").font(.headline)
+                Button("结束散步") { Task { try? await controller.session.handle(.stop) } }
+                    .buttonStyle(.bordered)
+
+            case .ending, .generating:
+                ProgressView("正在生成纪念品…")
+
+            case .done:
+                if let url = controller.session.keepsakeURL,
+                   let data = try? Data(contentsOf: url),
+                   let img = UIImage(data: data) {
+                    Image(uiImage: img)
+                        .resizable().scaledToFit()
+                        .frame(maxHeight: 500)
+                    ShareLink(item: url) { Label("分享纪念品", systemImage: "square.and.arrow.up") }
+                        .buttonStyle(.borderedProminent)
+                    Button("再走一次") {
+                        Task { try? await controller.session.handle(.start) /* will fail if state != idle; reset by tapping reset button below */ }
+                    }
+                }
+
+            case .failed:
+                Text("出错了：\(controller.session.lastError ?? "unknown")").foregroundStyle(.red)
+            }
+        }
+        .padding()
+    }
+}
+```
+
+(Note: returning to `.idle` after `.done` is a soft reset — add a `reset()` method on `WalkSession` that bumps state back to idle if you want a "再走一次" button to work cleanly. Out of scope for the floor; punt to P6 polish.)
+
+- [ ] **Step 2: Build + walk + verify on device**
+
+`Cmd+R`, take a 5-min walk, stop, wait, verify a poster appears and is shareable.
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add WalkTalk/App/WalkScreen.swift
+git commit -m "feat(p4): WalkScreen shows keepsake poster + ShareLink"
+```
+
+---
+
+### Task P4-T8: P4 close-out
+
+**Files:**
+- Create: `docs/superpowers/plans/checkpoints/P4-closeout.md`
+
+- [ ] **Step 1: Real-walk acceptance**
+
+Take one walk per condition:
+- **Best path:** good network, all APIs work — verify poster has AI image + map + stats
+- **No diffusion:** force-fail diffusion (block its endpoint, or set wrong model name) — verify poster still produced (without AI image)
+- **No script:** force-fail LLM endpoint — verify failsafe poster still produced
+
+- [ ] **Step 2: Write checkpoint with evidence**
+
+```markdown
+# P4 close-out
+
+**Date:** YYYY-MM-DD
+**Real walks:** <n>
+
+## Acceptance results
+- Best-path poster: <pass/fail> — file path/screenshot
+- Diffusion-failed poster: <pass/fail>
+- Script-failed (failsafe) poster: <pass/fail>
+
+## Open issues for P5
+- <list>
+```
+
+- [ ] **Step 3: Commit and tag**
+
+```bash
+git add docs/superpowers/plans/checkpoints/P4-closeout.md
+git commit -m "docs(p4): close-out — poster fallback verified across degradation paths"
+git tag p4-done
+```
+
+---
+
+**End of Batch 4 (P4 Keepsake v1).**
+
