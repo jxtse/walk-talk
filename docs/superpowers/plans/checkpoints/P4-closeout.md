@@ -39,7 +39,20 @@ recording the real-walk results.
 
 ## Open issues for P5
 
-- [ ] (fill in)
+- [ ] **Reconcile with P5 sketch.** A parallel-written P5 worktree
+      (commit `7e9cf19`) shipped a `KeepsakeBuilder` + `WalkScreen+ShareV2`
+      + `KeepsakeBuilderV2Tests` that assume a different protocol surface
+      (`KeepsakeScripting` / `DiffusionGenerating` / `PosterComposing` /
+      `VideoAssembling`, `KeepsakeResult`, `KeepsakeScript(videoClips:posterText:)`,
+      `KeepsakeMaterials.videoFile`). P4's canonical surface ships
+      `ScriptGenerator` / `DiffusionClient` / `PosterComposer` /
+      `KeepsakeOutput`, `KeepsakeScript(title:narration:posterPrompt:videoClips:bgmTag:highlightMomentIds:)`,
+      and `KeepsakeMaterials.videoURL`. P5 needs to either:
+        (a) wrap the canonical builder by adding `VideoAssembling` as an
+            optional dep on top of `KeepsakeBuilder.buildPoster`, OR
+        (b) bridge its `*ing` protocols onto the concrete P4 types.
+      Tracked here so P5 close-out doesn't lose this thread.
+- [ ] (other items as discovered during real walks)
 
 ## Risks / known degradation behaviours observed during walks
 
