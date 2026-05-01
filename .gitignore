@@ -20,3 +20,9 @@ Package.resolved
 # Local secrets (real ones never committed)
 Resources/Secrets.plist
 Sources/LocalGravity/Resources/Secrets.plist
+
+# Test fixtures (binary, often large and licensed for evaluation only)
+# Drop them in per Tests/LocalGravityTests/Fixtures/README.md
+Tests/LocalGravityTests/Fixtures/*.mp4
+Tests/LocalGravityTests/Fixtures/*.mov
+Tests/LocalGravityTests/Fixtures/*.m4a
