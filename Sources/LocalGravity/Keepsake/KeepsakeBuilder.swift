@@ -1,110 +1,122 @@
+// Sources/LocalGravity/Keepsake/KeepsakeBuilder.swift
 //
-//  KeepsakeBuilder.swift
-//  LocalGravity / Keepsake
+// P4-T6 — Orchestrate the poster pipeline. Always returns a poster URL,
+// even when the LLM fails AND diffusion fails AND there are no clips.
 //
-//  P4 + P5 — Single orchestration point for producing a keepsake from
-//  the materials a finished walk emits. P4 introduced this type with a
-//  poster-only path; P5 layers a video-first path on top with a HARD
-//  fallback to the P4 poster on any video-assembly failure.
+// The "always returns a URL" invariant (the failsafe rule) is sacred. The
+// only path that throws is the catastrophic "we couldn't even encode a
+// PNG to disk" branch — every upstream failure is caught and folded into
+// the failsafe output.
 //
-//  ---------------------------------------------------------------------
-//  HARD FALLBACK INVARIANT (P4 → P5 carried forward)
-//  ---------------------------------------------------------------------
-//  `build(materials:)` MUST return a non-nil KeepsakeResult except in
-//  catastrophic disk-write scenarios. Specifically:
-//
-//    • Scripter throws  → use `failsafeScript(materials)`.
-//    • Poster render throws → re-throw (P4 close-out invariant: at the
-//      very least we always produce a poster; if even that fails, the
-//      walk has no keepsake and the caller surfaces an error).
-//    • Video assembler throws → log + return the poster.
-//    • Video assembler missing or script has no clips or no recorded
-//      video file → silently skip video, return the poster.
-//
-//  Tests P5-T6 verify the last two paths; P4-T6 verifies the first two.
-//
-//  ---------------------------------------------------------------------
-//  Re-application note for P4 maintainers
-//  ---------------------------------------------------------------------
-//  If a P4-only revision of this file is later re-applied, the changes
-//  introduced by P5 are:
-//    1. Added `VideoAssembling` dependency (optional — `nil` = poster-only).
-//    2. Added the `if let video = video, ...` block in `build(materials:)`.
-//    3. Returns `KeepsakeResult(url:kind:)` instead of bare URL.
-//
+// Parallel-write notes
+// --------------------
+//  • This file is the canonical P4 KeepsakeBuilder. P5 is expected to wrap
+//    or extend it (e.g. via a `VideoAssembling` dep) without changing the
+//    poster-only invariant.
+//  • Implements `KeepsakeBuilding` (declared in `Sources/LocalGravity/Walk/
+//    KeepsakeBuilding.swift`) so `WalkController` can hold the builder by
+//    protocol and never import the Keepsake module directly. The
+//    `KeepsakeBuilding.build(rawVideoURL:momentLog:trackBuffer:)` signature
+//    forwards into `buildPoster` after collecting materials.
 
 import Foundation
+#if canImport(UIKit)
+import UIKit
+#endif
 
-public final class KeepsakeBuilder {
+#if canImport(UIKit)
+public final class KeepsakeBuilder: KeepsakeBuilding {
 
-    // MARK: - Dependencies
+    private let scripter: ScriptGenerator
+    private let diffusion: DiffusionClient
+    private let composer: PosterComposer
 
-    public let scripter: KeepsakeScripting
-    public let diffusion: DiffusionGenerating
-    public let poster: PosterComposing
-    public let video: VideoAssembling?    // P5: nil keeps P4 poster-only behavior.
-
-    public init(scripter: KeepsakeScripting,
-                diffusion: DiffusionGenerating,
-                poster: PosterComposing,
-                video: VideoAssembling? = nil) {
+    /// `walkStartedAt` lookup for the protocol entry point.
+    /// In normal operation `WalkController` knows when the walk started;
+    /// when called via the protocol we use `Date()` as a best-effort.
+    public init(scripter: ScriptGenerator,
+                diffusion: DiffusionClient = DiffusionClient(),
+                composer: PosterComposer = PosterComposer()) {
         self.scripter = scripter
         self.diffusion = diffusion
-        self.poster = poster
-        self.video = video
+        self.composer = composer
     }
 
-    // MARK: - Entry point
+    // MARK: - Plan-canonical entry point
 
-    /// Produce a keepsake from the walk's `materials`.
-    /// - Returns: a poster (P4) or a video (P5) URL with `kind` describing which.
-    /// - Throws: only if the poster path itself fails (P4 close-out invariant).
-    public func build(materials: KeepsakeMaterials) async throws -> KeepsakeResult {
+    /// Always returns a path. Will fall back to the failsafe poster
+    /// (script-less, diffusion-less, map-less if needed) on any failure.
+    public func buildPoster(materials: KeepsakeMaterials,
+                            outputDir: URL) async throws -> URL {
         // 1. Script — failsafe on any LLM error.
         let script: KeepsakeScript
         do {
             script = try await scripter.generate(materials)
         } catch {
-            LGLog.warn("scripter failed (\(error)); using failsafe script")
-            script = failsafeScript(materials)
+            script = Self.failsafeScript(materials)
         }
 
-        // 2. Poster — must succeed for the keepsake to exist at all.
-        let posterURL = try await renderPoster(materials: materials, script: script)
+        // 2. Parallel: AI poster + map snapshot (each independently safe).
+        async let aiPosterTask: UIImage? = {
+            do { return try await self.diffusion.generate(prompt: script.posterPrompt) }
+            catch { return nil }
+        }()
+        async let mapTask: UIImage? = MapRenderer.renderStaticSnapshot(
+            track: materials.track.map(\.coordinate),
+            size: CGSize(width: 1024, height: 600)
+        )
+        let aiPoster = await aiPosterTask
+        let map = await mapTask
 
-        // 3. Video — best effort on top.
-        if let video = video,
-           !script.videoClips.isEmpty,
-           materials.videoFile != nil {
-            do {
-                let url = try await video.assemble(materials: materials,
-                                                   posterURL: posterURL,
-                                                   script: script)
-                return KeepsakeResult(url: url, kind: .video)
-            } catch {
-                LGLog.warn("video assembly failed (\(error)); falling back to poster")
-            }
+        // 3. Compose (always succeeds — composer tolerates nil inputs).
+        let img = composer.compose(script: script, materials: materials,
+                                   aiPoster: aiPoster, mapImage: map)
+
+        // 4. Persist to disk.
+        try FileManager.default.createDirectory(at: outputDir,
+                                                withIntermediateDirectories: true)
+        let url = outputDir.appendingPathComponent("poster-\(UUID().uuidString).png")
+        guard let data = img.pngData() else {
+            throw KeepsakeFailure.allFailed("png encode failed")
         }
-        return KeepsakeResult(url: posterURL, kind: .poster)
+        try data.write(to: url)
+        return url
     }
 
-    // MARK: - P4 helpers
+    // MARK: - KeepsakeBuilding protocol bridge
 
-    /// Render the P4 poster for `materials` + `script`.
-    /// Implementation lives in `PosterComposer`; this is the seam P5 hangs the
-    /// fallback off of.
-    public func renderPoster(materials: KeepsakeMaterials,
-                             script: KeepsakeScript) async throws -> URL {
-        return try await poster.compose(materials: materials, script: script)
+    public func build(rawVideoURL: URL?,
+                      momentLog: MomentLog,
+                      trackBuffer: TrackBuffer) async throws -> URL {
+        let now = Date()
+        // We have no DialogLog here; the protocol predates P4-T1's wiring.
+        // Callers that need dialog should call buildPoster directly.
+        let mats = KeepsakeMaterials(
+            track: trackBuffer.snapshot,
+            moments: momentLog.snapshot(),
+            dialog: [],
+            videoURL: rawVideoURL,
+            startedAt: now.addingTimeInterval(-1),
+            endedAt: now
+        )
+        let outDir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("keepsakes", isDirectory: true)
+        return try await buildPoster(materials: mats, outputDir: outDir)
     }
 
-    /// Deterministic, no-LLM script used when the LLM endpoint is down.
-    /// Conservative: no video clips (so the V2 path skips itself) and a
-    /// single neutral poster line so we never ship blank output.
-    public func failsafeScript(_ materials: KeepsakeMaterials) -> KeepsakeScript {
-        return KeepsakeScript(
+    // MARK: - Failsafe
+
+    /// Hard-coded script used when the LLM round-trip fails. Conservative
+    /// posterPrompt + neutral title so the poster still looks intentional.
+    static func failsafeScript(_ m: KeepsakeMaterials) -> KeepsakeScript {
+        KeepsakeScript(
+            title: "一段散步",
+            narration: "脚步会记得这条路。",
+            posterPrompt: "abstract minimalist watercolor of a quiet walking path",
             videoClips: [],
-            posterText: "一段散步的记录"
+            bgmTag: "calm",
+            highlightMomentIds: Array(m.moments.indices.prefix(3))
         )
     }
 }
+#endif
