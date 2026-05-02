@@ -1,0 +1,9 @@
+fastapi==0.115.0
+uvicorn[standard]==0.32.0
+httpx==0.27.2
+pillow==10.4.0
+pyttsx3==2.91
+pygrabber==0.2
+comtypes==1.4.16
+pytest==8.3.3
+pytest-asyncio==0.24.0
