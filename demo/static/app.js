@@ -171,3 +171,61 @@ $('#script-stop-btn').onclick = async () => {
   await fetch('/api/script/stop', { method: 'POST' });
   showFlash('脚本已停止');
 };
+
+// ============ Whisper 录音 ============
+let recorder = null;
+let chunks = [];
+let stream = null;
+const micBtn = $('#mic-btn');
+
+async function startRecording() {
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch (e) {
+    showFlash('麦克风权限被拒');
+    return false;
+  }
+  const mime = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+    ? 'audio/webm;codecs=opus' : 'audio/webm';
+  recorder = new MediaRecorder(stream, { mimeType: mime });
+  chunks = [];
+  recorder.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
+  recorder.onstop = async () => {
+    const blob = new Blob(chunks, { type: mime });
+    stream.getTracks().forEach(t => t.stop());
+    micBtn.classList.remove('recording');
+    showFlash('转写中…', 1200);
+    const fd = new FormData();
+    fd.append('audio', blob, 'voice.webm');
+    try {
+      const r = await fetch('/api/voice', { method: 'POST', body: fd });
+      const d = await r.json();
+      if (d.text) {
+        $('#text-input').value = d.text;
+        $('#text-input').focus();
+      } else {
+        showFlash('没听清');
+      }
+    } catch (e) {
+      showFlash('转写失败');
+    }
+  };
+  recorder.start();
+  micBtn.classList.add('recording');
+  return true;
+}
+
+function stopRecording() {
+  if (recorder && recorder.state === 'recording') {
+    recorder.stop();
+    recorder = null;
+  }
+}
+
+micBtn.onclick = async () => {
+  if (recorder && recorder.state === 'recording') {
+    stopRecording();
+  } else {
+    await startRecording();
+  }
+};
