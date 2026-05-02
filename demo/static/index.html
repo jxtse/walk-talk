@@ -1,45 +1,76 @@
 <!doctype html>
 <html lang="zh-CN">
-<head><meta charset="utf-8"><title>本地引力 · 散步原型</title>
-<style>
-:root{color-scheme:dark;font-family:-apple-system,"Segoe UI",sans-serif;background:#0e1116;color:#e8ecf1}
-body{margin:0;display:grid;grid-template-columns:minmax(0,1.5fr) minmax(360px,1fr);min-height:100vh}
-.left{padding:18px;display:flex;flex-direction:column;gap:14px}
-.right{padding:18px;border-left:1px solid #1f242c;display:flex;flex-direction:column;gap:14px;background:#10141a}
-.video{background:#000;border-radius:8px;overflow:hidden;aspect-ratio:16/9}
-.video img{width:100%;height:100%;object-fit:cover;display:block}
-h1{margin:0;font-size:18px}
-button{background:#1f6f5e;border:0;color:white;padding:10px 14px;border-radius:6px;cursor:pointer;font-size:14px}
-button.ghost{background:#1f242c}
-input{background:#161b22;color:inherit;border:1px solid #2a323d;border-radius:6px;padding:10px;flex:1;font-size:14px}
-.row{display:flex;gap:8px;align-items:center}
-#log{flex:1;overflow-y:auto;background:#161b22;border-radius:6px;padding:12px;font-size:14px;line-height:1.5;min-height:300px}
-.turn{margin-bottom:10px}
-.turn.user{color:#9bd1ff}
-.turn.assistant{color:#a8e6c1}
-.turn.system{color:#888}
-#flash{position:fixed;top:20px;right:20px;background:#1f6f5e;color:white;padding:10px 16px;border-radius:6px;opacity:0;transition:opacity .3s}
-.keepsake{margin-top:10px;border:1px solid #2a323d;border-radius:6px;overflow:hidden}
-.keepsake img{display:block;width:100%}
-</style></head>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1400">
+<title>本地引力 · 步语 demo</title>
+<link rel="stylesheet" href="/static/styles.css">
+</head>
 <body>
-<div class="left">
-  <h1>本地引力 — Insta360 Link 2 Pro 桌面原型</h1>
-  <div class="video"><img src="/video.mjpg" alt="live"></div>
-  <div class="row">
-    <button id="start">开始散步</button>
-    <button id="end" class="ghost">结束散步</button>
+
+<!-- ============ 左：iPhone mock ============ -->
+<div class="iphone">
+  <div class="notch"></div>
+  <div class="status-bar">
+    <span>9:41</span>
+    <span>● ● ●</span>
   </div>
-</div>
-<div class="right">
-  <h1>对话</h1>
-  <div id="log"></div>
-  <div class="row">
-    <input id="text" placeholder="对 AI 说点什么…（回车发送）">
-    <button id="send">发送</button>
+  <div class="iphone-content">
+    <div class="app-title">本地引力 · 步语</div>
+    <div class="dialog-area" id="dialog"></div>
+    <div class="input-bar">
+      <input id="text-input" placeholder="对它说点什么…（回车发送）" />
+      <button id="mic-btn" class="mic" title="点击录音">🎙</button>
+      <button id="send-btn" title="发送">↑</button>
+    </div>
+    <div class="session-btns">
+      <button class="start" id="start-btn">开始散步</button>
+      <button class="end" id="end-btn">结束散步</button>
+    </div>
   </div>
-  <div id="keepsake-panel"></div>
+  <div class="flash" id="flash"></div>
+  <div class="home-indicator"></div>
 </div>
-<div id="flash"></div>
+
+<!-- ============ 右：技术面板 ============ -->
+<div class="tech">
+  <div class="tech-block">
+    <h2>演示控制</h2>
+    <div class="scenario-btns">
+      <button data-scenario="companion">▶ 场景 A · 陪伴</button>
+      <button data-scenario="serendipity">▶ 场景 B · 偶遇</button>
+      <button data-scenario="free">⌨ 自由模式</button>
+      <button class="stop" id="script-stop-btn">■ 停止脚本</button>
+    </div>
+  </div>
+
+  <div class="tech-block">
+    <h2>摄像头 / live MJPEG</h2>
+    <div class="cam-frame"><img src="/video.mjpg" alt="cam"></div>
+    <div class="ptz-readout">
+      <span>pan<b id="ptz-pan">0</b></span>
+      <span>tilt<b id="ptz-tilt">0</b></span>
+      <span>zoom<b id="ptz-zoom">100</b></span>
+      <span>src<b id="ptz-src">-</b></span>
+    </div>
+  </div>
+
+  <div class="tech-block">
+    <h2>工具调用</h2>
+    <div class="log-list" id="tool-log"></div>
+  </div>
+
+  <details class="tech-block collapsible">
+    <summary>LLM 原始消息</summary>
+    <pre class="raw-pre" id="llm-raw">（尚无）</pre>
+  </details>
+
+  <details class="tech-block collapsible">
+    <summary>高德 POI 原始 JSON</summary>
+    <pre class="raw-pre" id="amap-raw">（尚无）</pre>
+  </details>
+</div>
+
 <script src="/static/app.js"></script>
-</body></html>
+</body>
+</html>
