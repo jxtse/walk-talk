@@ -92,12 +92,14 @@ function handleAction(el) {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ scenario: sc }),
     });
+    setSceneVideo(sc);
     showFlash('出发！');
     startWalkClock();
   }
   if (action === 'freemode') {
     fetch('/api/script/stop', { method: 'POST' });
     fetch('/api/start', { method: 'POST' });
+    setSceneVideo(null);
     showFlash('已进入自由模式');
     resetWalkSession();
     startWalkClock();
@@ -106,6 +108,7 @@ function handleAction(el) {
   if (action === 'skip') showFlash('跳过');
   if (action === 'end') {
     stopWalkClock();
+    setSceneVideo(null);
     fetch('/api/end', { method: 'POST' })
       .then(r => r.json()).then(d => {
         if (d.keepsake_url) showKeepsake(d.keepsake_url);
@@ -287,6 +290,26 @@ function addDirection(d) {
   showFlash(`${arrows[d.arrow] || '•'} ${d.label || ''} · ${d.distance_m}m`);
 }
 
+// ============ Scene video swap (mjpeg <-> scenario mp4) ============
+function setSceneVideo(scenario) {
+  const img = document.getElementById('cam-mjpeg');
+  const vid = document.getElementById('cam-scene');
+  if (!vid || !img) return;
+  if (scenario && scenario !== 'free') {
+    vid.src = `/static/scenes/${scenario}.mp4`;
+    vid.style.display = 'block';
+    img.style.display = 'none';
+    vid.currentTime = 0;
+    vid.play().catch((e) => console.warn('scene video play failed', e));
+  } else {
+    vid.pause();
+    vid.removeAttribute('src');
+    vid.load();
+    vid.style.display = 'none';
+    img.style.display = 'block';
+  }
+}
+
 // ============ SSE ============
 const es = new EventSource('/events');
 es.onmessage = (e) => {
@@ -334,6 +357,7 @@ $$('.scenario-btns button[data-scenario]').forEach(btn => {
     const scenario = btn.dataset.scenario;
     if (scenario === 'free') {
       await fetch('/api/script/stop', { method: 'POST' });
+      setSceneVideo(null);
       showFlash('已切到自由模式');
       return;
     }
@@ -344,7 +368,7 @@ $$('.scenario-btns button[data-scenario]').forEach(btn => {
       body: JSON.stringify({ scenario }),
     });
     if (!r.ok) showFlash('启动失败：' + (await r.text()));
-    else { startWalkClock(); gotoScreen('s4'); }
+    else { setSceneVideo(scenario); startWalkClock(); gotoScreen('s4'); }
   };
 });
 $('#script-stop-btn').onclick = async () => {

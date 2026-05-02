@@ -219,7 +219,10 @@
 
   <div class="tech-block">
     <h2>摄像头 / live MJPEG</h2>
-    <div class="cam-frame"><img src="/video.mjpg" alt="cam"></div>
+    <div class="cam-frame">
+      <img id="cam-mjpeg" src="/video.mjpg" alt="cam">
+      <video id="cam-scene" muted loop playsinline preload="auto" style="display:none;width:100%;height:100%;object-fit:cover;"></video>
+    </div>
     <div class="ptz-readout">
       <span>pan<b id="ptz-pan">0</b></span>
       <span>tilt<b id="ptz-tilt">0</b></span>
