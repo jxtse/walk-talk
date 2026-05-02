@@ -7,7 +7,7 @@ from typing import Any
 import httpx
 
 DEFAULT_BASE_URL = "http://100.99.139.20:18141"
-DEFAULT_PLANNER_MODEL = "claude-sonnet-4.5"
+DEFAULT_PLANNER_MODEL = "gpt-5.2"
 DEFAULT_VLM_MODEL = "gpt-4o-2024-11-20"
 
 

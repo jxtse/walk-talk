@@ -231,7 +231,9 @@ async def say(req: Request):
     text = (body.get("text") or "").strip()
     if not text:
         return JSONResponse({"error": "empty"}, status_code=400)
-    await asyncio.get_event_loop().run_in_executor(
+    # fire-and-forget：用户气泡通过 dialog.subscribe -> SSE 立即出现，
+    # AI 回复也通过 SSE 推送，不要 await（否则前端会卡 5-30s）
+    asyncio.get_event_loop().run_in_executor(
         None, agent.handle_user_turn, text)
     return {"status": "ok"}
 

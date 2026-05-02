@@ -42,9 +42,23 @@ class AgentRuntime:
             self._loop(messages)
 
     def _loop(self, messages: list[dict]) -> None:
-        for _ in range(self.max_iterations):
+        for it in range(self.max_iterations):
+            if self._bus is not None:
+                self._bus.publish({
+                    "type": "llm_raw", "phase": "request",
+                    "iteration": it, "model": self.llm.model,
+                    "messages": messages[-4:],  # 只发尾部 4 条避免太大
+                })
             msg: AssistantMessage = self.llm.chat(
                 messages=messages, tools=self.tool_schemas)
+            if self._bus is not None:
+                self._bus.publish({
+                    "type": "llm_raw", "phase": "response",
+                    "iteration": it,
+                    "content": msg.content,
+                    "tool_calls": [{"name": tc.name, "args": tc.arguments}
+                                   for tc in msg.tool_calls],
+                })
             if not msg.tool_calls:
                 # Final message; we expect the agent to have called
                 # speak_to_user already, so we don't surface msg.content
