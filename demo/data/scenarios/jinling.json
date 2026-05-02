@@ -1,0 +1,53 @@
+{
+  "scenario_id": "jinling",
+  "title": "金陵天地 · 河西黄昏走一圈",
+  "duration_s": 180,
+  "events": [
+    {"at": 0.0, "type": "dialog", "role": "ai", "text": "天色刚转蓝，我们就从金陵天地这边的二层步道开始走？这一路的灯都正好在被点亮。", "speak": true},
+    {"at": 6.0, "type": "tool_call", "name": "pan_camera", "args": {"direction": "right", "reason": "看河西天际线"}},
+    {"at": 6.2, "type": "ptz", "pan": 25, "tilt": 5, "zoom": 100, "source": "script"},
+    {"at": 10.0, "type": "poi_card", "poi_id": "jinling_tiandi"},
+    {"at": 11.0, "type": "dialog", "role": "ai", "text": "金陵天地的黄昏蓝调，是河西最值得拍的十分钟，云层一散就是这种颜色。", "speak": true},
+    {"at": 22.0, "type": "dialog", "role": "user", "text": "晚一点会变什么样？"},
+    {"at": 23.5, "type": "poi_image_swap", "poi_id": "jinling_tiandi", "to_image_id": "jinling_tiandi_night"},
+    {"at": 24.0, "type": "dialog", "role": "ai", "text": "再晚半小时大概是这样，车流被拉成线，整条江东中路就活过来了。", "speak": true},
+
+    {"at": 35.0, "type": "direction", "arrow": "right", "distance_m": 300, "eta_min": 4, "label": "云梦公园"},
+    {"at": 36.0, "type": "dialog", "role": "ai", "text": "我们顺着云锦路往北，下一段会穿过云梦公园，那边的夜樱倒影超出片。", "speak": true},
+    {"at": 45.0, "type": "poi_card", "poi_id": "yunmeng_park"},
+    {"at": 50.0, "type": "tool_call", "name": "analyze_frame_vlm", "args": {"question": "判断当前画面里樱花树的距离与最佳拍摄角度"}},
+    {"at": 53.0, "type": "dialog", "role": "ai", "text": "你右前方那一排是夜樱，蹲下来拍能把水里的灯一起带进去。", "speak": true},
+    {"at": 60.0, "type": "dialog", "role": "user", "text": "记一下"},
+    {"at": 61.0, "type": "tool_call", "name": "record_moment", "args": {"label": "云梦公园·夜樱倒影"}},
+    {"at": 61.5, "type": "moment", "label": "云梦公园·夜樱倒影"},
+
+    {"at": 72.0, "type": "direction", "arrow": "up", "distance_m": 400, "eta_min": 5, "label": "青奥中心双塔"},
+    {"at": 75.0, "type": "dialog", "role": "ai", "text": "继续往北，下一个标志物是青奥中心，扎哈生前最后一组项目之一。", "speak": true},
+    {"at": 85.0, "type": "poi_card", "poi_id": "qingao_center"},
+    {"at": 87.0, "type": "tool_call", "name": "pan_camera", "args": {"direction": "up", "reason": "仰拍双塔"}},
+    {"at": 87.2, "type": "ptz", "pan": 0, "tilt": 35, "zoom": 110, "source": "script"},
+    {"at": 90.0, "type": "dialog", "role": "ai", "text": "对，这个仰角，双塔的曲线会咬在一起，最有戏。", "speak": true},
+    {"at": 100.0, "type": "poi_image_swap", "poi_id": "qingao_center", "to_image_id": "qingao_archway"},
+    {"at": 101.0, "type": "dialog", "role": "ai", "text": "二层的拱门也别错过，框景特别干净。", "speak": true},
+
+    {"at": 110.0, "type": "direction", "arrow": "left", "distance_m": 350, "eta_min": 4, "label": "南京眼步行桥"},
+    {"at": 112.0, "type": "dialog", "role": "ai", "text": "再走 300 多米就到南京眼了，我们卡在灯一齐亮的那个时间点。", "speak": true},
+    {"at": 122.0, "type": "poi_card", "poi_id": "nanjing_eye"},
+    {"at": 124.0, "type": "tool_call", "name": "pan_camera", "args": {"direction": "right", "reason": "看桥拱对称"}},
+    {"at": 124.2, "type": "ptz", "pan": 15, "tilt": 0, "zoom": 105, "source": "script"},
+    {"at": 127.0, "type": "dialog", "role": "ai", "text": "正中间这个对称位是大家在抢的机位，再走两步靠右一点更好。", "speak": true},
+    {"at": 135.0, "type": "dialog", "role": "user", "text": "帮我记一下"},
+    {"at": 136.0, "type": "tool_call", "name": "record_moment", "args": {"label": "南京眼·拱门对称剪影"}},
+    {"at": 136.5, "type": "moment", "label": "南京眼·拱门对称剪影"},
+
+    {"at": 145.0, "type": "direction", "arrow": "right", "distance_m": 250, "eta_min": 3, "label": "河西生态公园"},
+    {"at": 146.0, "type": "dialog", "role": "ai", "text": "下一段安静一点，河西生态公园那一排水杉的倒影，可以走累了停一下。", "speak": true},
+    {"at": 152.0, "type": "poi_card", "poi_id": "hexi_ecology"},
+
+    {"at": 162.0, "type": "direction", "arrow": "up", "distance_m": 300, "eta_min": 4, "label": "国际友谊公园"},
+    {"at": 164.0, "type": "dialog", "role": "ai", "text": "最后压轴是国际友谊公园，湖心红房子配万国旗阵，整段路最戏剧的收尾。", "speak": true},
+    {"at": 170.0, "type": "poi_card", "poi_id": "youyi_park"},
+    {"at": 172.0, "type": "ptz_sweep"},
+    {"at": 178.0, "type": "keepsake_render", "image_id": "companion_keepsake"}
+  ]
+}

@@ -2,34 +2,196 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=1400">
+<meta name="viewport" content="width=1500">
 <title>本地引力 · 步语 demo</title>
 <link rel="stylesheet" href="/static/styles.css">
 </head>
 <body>
 
-<!-- ============ 左：iPhone mock ============ -->
-<div class="iphone">
+<!-- ============ 左：iPhone mockup 多屏 ============ -->
+<div class="phone">
   <div class="notch"></div>
-  <div class="status-bar">
-    <span>9:41</span>
-    <span>● ● ●</span>
-  </div>
-  <div class="iphone-content">
-    <div class="app-title">本地引力 · 步语</div>
-    <div class="dialog-area" id="dialog"></div>
-    <div class="input-bar">
-      <input id="text-input" placeholder="对它说点什么…（回车发送）" />
-      <button id="mic-btn" class="mic" title="点击录音">🎙</button>
-      <button id="send-btn" title="发送">↑</button>
+
+  <!-- s1 启动页 -->
+  <section class="screen active" id="s1" data-anim="zoom-in">
+    <img class="bg" src="/static/mockup/s1.png" alt="">
+    <div class="hot" style="bottom:3.5%;left:6%;width:42%;height:5.5%"
+         data-go="s2" data-action="login"></div>
+    <div class="hot primary" style="bottom:3.5%;right:6%;width:42%;height:5.5%"
+         data-go="s2" data-action="start"></div>
+  </section>
+
+  <!-- s2 主页 / 路线列表 -->
+  <section class="screen" id="s2" data-anim="slide-right">
+    <img class="bg" src="/static/mockup/s2.png" alt="">
+
+    <!-- 两张 mockup 路线卡片：直接点击就出发 -->
+    <div class="hot" style="top:30%;left:4%;width:45%;height:24%"
+         data-action="select-route" data-scenario="companion"
+         data-route="玄武湖落日"></div>
+    <div class="hot" style="top:30%;right:4%;width:45%;height:24%"
+         data-action="select-route" data-scenario="serendipity"
+         data-route="安静巷子"></div>
+
+    <!-- 第三张：金陵天地夜走（叠加在 mockup 默认背景之上） -->
+    <div class="route-card-overlay"
+         data-action="select-route" data-scenario="jinling"
+         data-route="金陵天地 · 河西黄昏走一圈">
+      <img src="/static/routes/jinling/jinlingtiandi_02_金陵天地_黄昏蓝调.jpg" alt="">
+      <div class="route-card-meta">
+        <div class="route-card-title">金陵天地 · 河西黄昏走一圈</div>
+        <div class="route-card-sub">6 个机位 · 3.2km · 约 90 分钟 · 黄昏到夜</div>
+      </div>
     </div>
-    <div class="session-btns">
-      <button class="start" id="start-btn">开始散步</button>
-      <button class="end" id="end-btn">结束散步</button>
+
+    <!-- 底部 tab bar：home / 指南针 / + / 日历 / 我 -->
+    <div class="hot" style="bottom:1.2%;left:8%;width:14%;height:6%"
+         data-go="s2"></div>
+    <div class="hot" style="bottom:1.2%;left:24%;width:14%;height:6%"
+         data-go="s4" data-action="freemode"></div>
+    <div class="hot center-add" style="bottom:1.2%;left:42%;width:16%;height:8%"
+         data-go="s4" data-action="freemode" title="自由散步"></div>
+    <div class="hot" style="bottom:1.2%;left:62%;width:14%;height:6%"
+         data-go="s6"></div>
+    <div class="hot" style="bottom:1.2%;right:6%;width:14%;height:6%"
+         data-go="s7"></div>
+  </section>
+
+  <!-- s3 路线详情 -->
+  <section class="screen" id="s3" data-anim="slide-right">
+    <img class="bg" src="/static/mockup/s3.png" alt="">
+    <div class="hot" style="top:1%;left:2%;width:10%;height:4.5%"
+         data-go="s2"></div>
+
+    <!-- 金陵天地路线的覆盖层（仅当选中该路线时显示） -->
+    <div class="route-detail-overlay" id="route-detail-jinling" style="display:none">
+      <img class="route-hero" src="/static/routes/jinling/jinlingtiandi_02_金陵天地_黄昏蓝调.jpg" alt="">
+      <div class="route-info">
+        <div class="route-title">金陵天地 · 河西黄昏走一圈</div>
+        <div class="route-tags">
+          <span>3.2 km</span><span>约 90 分钟</span><span>黄昏 → 夜</span><span>6 机位</span>
+        </div>
+        <div class="route-desc">
+          从金陵天地的二层步道出发，顺着云锦路一路向北。
+          经云梦公园的夜樱、青奥中心的扎哈双塔、南京眼对称剪影，
+          再到河西生态公园的水杉倒影，最后收束在国际友谊公园湖心红房子。
+        </div>
+        <div class="route-stops">
+          <div class="stop"><img src="/static/routes/jinling/jinlingtiandi_02_金陵天地_黄昏蓝调.jpg"><span>金陵天地</span></div>
+          <div class="stop"><img src="/static/routes/jinling/yunmeng_01_云梦公园_夜樱倒影.jpg"><span>云梦公园</span></div>
+          <div class="stop"><img src="/static/routes/jinling/qingao_00_青奥中心_扎哈双塔仰拍.jpg"><span>青奥中心</span></div>
+          <div class="stop"><img src="/static/routes/jinling/nanjingyan_00_南京眼_拱门对称剪影.jpg"><span>南京眼</span></div>
+          <div class="stop"><img src="/static/routes/jinling/shengtai2_03_河西生态公园_水杉倒影.jpg"><span>河西生态</span></div>
+          <div class="stop"><img src="/static/routes/jinling/youyi2_00_友谊公园_湖心红房子.jpg"><span>国际友谊</span></div>
+        </div>
+      </div>
     </div>
-  </div>
-  <div class="flash" id="flash"></div>
-  <div class="home-indicator"></div>
+
+    <!-- 真实出发按钮，覆盖在 mockup 的"出发"按钮上 -->
+    <div class="hot primary" style="bottom:2.5%;left:8%;width:84%;height:7%"
+         data-go="s4" data-action="depart"></div>
+  </section>
+
+  <!-- s4 散步中：地图背景 + 实时浮层 -->
+  <section class="screen" id="s4" data-anim="zoom-in">
+    <img class="bg" src="/static/mockup/s4.png" alt="">
+
+    <!-- AI 气泡（替换 mockup 里那个示例气泡） -->
+    <div class="ai-bubble-overlay" id="ai-bubble">
+      <span class="face">◡‿◡</span>
+      <span class="text" id="ai-bubble-text">准备好了，按下面那个绿色按钮跟我说话</span>
+    </div>
+
+    <!-- 顶部 hud：时间 / 距离（真的会滚动） -->
+    <div class="walk-hud">
+      <span>⏱ <b id="walk-time">00:00</b></span>
+      <span>◉ <b id="walk-dist">0.0</b>km</span>
+      <span class="walk-end" data-go="s6" data-action="end">结束 ▾</span>
+    </div>
+
+    <!-- 上滑把手：打开对话抽屉 -->
+    <div class="hot drawer-handle" id="drawer-handle"
+         style="bottom:13%;left:42%;width:16%;height:5%"></div>
+
+    <!-- 底部麦克风按钮（真实可录音） -->
+    <button class="mic-fab" id="mic-fab" title="按住或点击说话">🎙</button>
+
+    <!-- 右下角小按钮 → 看相册 -->
+    <div class="hot" style="bottom:2%;right:5%;width:15%;height:7%"
+         data-go="s7"></div>
+
+    <!-- 对话抽屉 -->
+    <div class="dialog-drawer" id="dialog-drawer">
+      <div class="drawer-grip"></div>
+      <div class="dialog-area" id="dialog"></div>
+      <div class="input-bar">
+        <input id="text-input" placeholder="对它说点什么…" />
+        <button id="send-btn">↑</button>
+      </div>
+    </div>
+
+    <!-- 顶部 flash 提示 -->
+    <div class="flash" id="flash"></div>
+  </section>
+
+  <!-- s5 POI 偶遇弹卡 -->
+  <section class="screen" id="s5" data-anim="slide-up">
+    <img class="bg" src="/static/mockup/s5.png" alt="">
+    <!-- 真实 POI 内容覆盖 mockup 的卡片 -->
+    <div class="poi-overlay" id="poi-overlay">
+      <img class="poi-img" id="poi-img" src="" alt="">
+      <div class="poi-name" id="poi-name">涂鸦墙</div>
+      <div class="poi-tag" id="poi-tag">这面墙大概每个月都会被重新画一次</div>
+    </div>
+    <div class="hot primary" style="bottom:2.5%;left:6%;width:38%;height:5%"
+         data-go="s4" data-action="mark"></div>
+    <div class="hot" style="bottom:2.5%;right:6%;width:38%;height:5%"
+         data-go="s4" data-action="skip"></div>
+  </section>
+
+  <!-- s6 散步笔记 -->
+  <section class="screen" id="s6" data-anim="slide-right">
+    <img class="bg" src="/static/mockup/s6.png" alt="">
+    <div class="hot" style="top:1%;left:2%;width:8%;height:4%"
+         data-go="s4"></div>
+
+    <!-- Key Points 不再覆盖文字（mockup 自带），只保留途中标记小药丸 -->
+    <div class="notes-overlay">
+      <div class="moments-strip" id="moments-strip"></div>
+    </div>
+
+    <div class="hot primary" style="bottom:5%;right:5%;width:18%;height:8%;border-radius:50%"
+         data-go="s7" data-action="plog"></div>
+  </section>
+
+  <!-- s7 散步 Plog -->
+  <section class="screen" id="s7" data-anim="slide-up">
+    <img class="bg" src="/static/mockup/s7.png" alt="">
+    <div class="hot" style="top:1%;left:2%;width:8%;height:4%"
+         data-go="s6"></div>
+
+    <!-- 真实 keepsake 渲染（最终生成的合影） -->
+    <div class="keepsake-overlay" id="keepsake-overlay" style="display:none">
+      <img id="keepsake-img" src="" alt="散步合影">
+    </div>
+
+    <!-- 沿途看过的真实 POI 照片：覆盖 mockup 上的两张占位照片 -->
+    <div class="plog-photo-overlay" id="plog-photo-1" style="display:none">
+      <img src="" alt="">
+      <div class="plog-caption"></div>
+    </div>
+    <div class="plog-photo-overlay alt" id="plog-photo-2" style="display:none">
+      <img src="" alt="">
+      <div class="plog-caption"></div>
+    </div>
+
+    <div class="hot primary" style="bottom:2%;left:5%;width:42%;height:5.5%"
+         data-go="s1" data-action="share"></div>
+    <div class="hot" style="bottom:2%;right:5%;width:42%;height:5.5%"
+         data-go="s1" data-action="save"></div>
+  </section>
+
+  <div class="home-bar"></div>
 </div>
 
 <!-- ============ 右：技术面板 ============ -->
@@ -39,8 +201,19 @@
     <div class="scenario-btns">
       <button data-scenario="companion">▶ 场景 A · 陪伴</button>
       <button data-scenario="serendipity">▶ 场景 B · 偶遇</button>
+      <button data-scenario="jinling">▶ 场景 C · 金陵天地</button>
       <button data-scenario="free">⌨ 自由模式</button>
       <button class="stop" id="script-stop-btn">■ 停止脚本</button>
+    </div>
+    <div class="screen-jump">
+      <span>跳转屏：</span>
+      <button data-jump="s1">s1</button>
+      <button data-jump="s2">s2</button>
+      <button data-jump="s3">s3</button>
+      <button data-jump="s4">s4</button>
+      <button data-jump="s5">s5</button>
+      <button data-jump="s6">s6</button>
+      <button data-jump="s7">s7</button>
     </div>
   </div>
 

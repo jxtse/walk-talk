@@ -92,19 +92,37 @@ class ScriptPlayer:
                 "name": ev["name"], "args": ev.get("args", {})})
         elif et == "poi_card":
             poi = self._pois[ev["poi_id"]]
+            # Prefer explicit image_url (e.g. real photo from /static)
+            # over the cached generated image referenced by image_id.
+            image_url = poi.get("image_url") or f"/poi_image/{poi['image_id']}.png"
             self._bus.publish({
                 "type": "poi_card",
                 "poi_id": poi["poi_id"], "name": poi["name"],
                 "distance_m": poi["distance_m"],
                 "rating": poi["rating"], "cost": poi["cost"],
                 "address": poi["address"], "tagline": poi["tagline"],
-                "image_url": f"/poi_image/{poi['image_id']}.png",
+                "image_url": image_url,
             })
         elif et == "poi_image_swap":
+            # If event provides a direct to_image_url, use it; otherwise
+            # look up by to_image_id, falling back to /poi_image/<id>.png.
+            if ev.get("to_image_url"):
+                image_url = ev["to_image_url"]
+            else:
+                tid = ev["to_image_id"]
+                # See if any POI has alt_image_id matching tid with an alt_image_url
+                image_url = f"/poi_image/{tid}.png"
+                for poi in self._pois.values():
+                    if poi.get("alt_image_id") == tid and poi.get("alt_image_url"):
+                        image_url = poi["alt_image_url"]
+                        break
+                    if poi.get("image_id") == tid and poi.get("image_url"):
+                        image_url = poi["image_url"]
+                        break
             self._bus.publish({
                 "type": "poi_image_swap",
                 "poi_id": ev["poi_id"],
-                "image_url": f"/poi_image/{ev['to_image_id']}.png"})
+                "image_url": image_url})
         elif et == "direction":
             self._bus.publish({
                 "type": "direction",
