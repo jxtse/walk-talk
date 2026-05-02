@@ -1,43 +1,60 @@
-# Demo Runbook (≈3 min recording)
+# Demo Runbook v2 (≈3 min recording)
 
-## Pre-flight (do once before recording)
-1. Camera plugged in, light on.
-2. `tasklist | findstr python` shows no leftover Python processes.
-3. Tailscale connected; `curl http://100.99.139.20:18141/v1/models` returns JSON.
-4. Speakers unmuted; volume around 50%.
-5. Place 1–2 desk objects in front of camera (a plant, a mug, a notebook).
-6. Have OBS / Windows Game Bar (`Win+G`) ready to record the browser window
-   + system audio.
+## Pre-flight (一次性)
 
-## Run
+1. `.env` 已存在且填了 `AMAP_KEY` / `OPENAI_NEXT_API_KEY`
+   （参考 `.env.example`）
+2. 摄像头插好；`tasklist | findstr python` 没有遗留 python
+3. Tailscale 连上；`curl http://100.99.139.20:18141/v1/models` 正常
+4. 浏览器允许麦克风（首次开 8788 会弹权限）
+5. OBS / Win+G 准备好录浏览器窗口 + 系统音
+
+## 一次性预生成（首装时跑一次；之后缓存即可）
+
+```
+python -m demo.cli.prebake_images   # ~1-2 min, 5 张图
+python -m demo.cli.prebake_pois     # ~5s, 1 个缓存文件
+```
+
+## 启动
+
 ```
 python -m demo.server
 ```
-Wait for `demo server up: http://127.0.0.1:8788/`. Open in browser, fullscreen
-the window.
 
-## Recording script
-Lines you actually type are in **bold**.
+等 `demo server up: http://127.0.0.1:8788/`，浏览器全屏打开。
 
-1. (Recording starts. Click "开始散步".) AI greets within ~5s.
-2. Aim the camera at a desk object using the on-screen `/video.mjpg` feed.
-   Type: **嘿，那是什么？** AI looks + describes.
-3. Wait ~10s for proactive turn (or skip and continue).
-4. Type: **附近有什么好玩的？** AI should call `recommend_nearby_place`
-   and mention 鸡鸣寺 / 紫峰 / etc.
-5. Type: **记一下，下次想再来。** Flash banner appears.
-6. Type: **周围有什么？让我看看。** Camera physically sweeps the room
-   (left-right-center, ~3s).
-7. Click "结束散步". Keepsake collage renders in right panel.
-8. Stop recording.
+## 录制脚本（≈3 min）
 
-Total wall-clock: 2:30 – 3:30.
+### 段 1：场景 A 陪伴（90s）
+1. 开始录像
+2. 右侧点 "▶ 场景 A · 陪伴"
+3. 跟着脚本看：AI 自动主动开口 → 转向湖 → 用户问"那是什么塔" →
+   AI 调 VLM → POI 卡片（鸡鸣寺）→ 记一下 → 环视 → keepsake
 
-## If something goes wrong mid-take
-- Camera frozen → leave it, the agent will say "我没看清".
-- LLM timeout → wait or restart the server, re-take.
-- Audio cuts out → re-record (TTS isn't critical to the visual story).
+### 段 2：场景 B 偶遇（60s）
+4. 点 "▶ 场景 B · 偶遇"
+5. AI 主动推荐 Beans Solo → POI 卡片 + 方向浮条 → 用户问"长什么样" →
+   卡片图换成内景 → 用户"走吧" → keepsake
 
-## Re-takes
-Each session writes to `demo_runtime/`. Delete that directory between takes
-if you want a clean slate, otherwise old moments and keepsakes accumulate.
+### 段 3：自由模式真演（30s）
+6. 点 "⌨ 自由模式"
+7. 点麦克风说一句"周围有什么"，松手等转写 → 按发送 → 看真实 AI 反应
+
+8. 停止录像
+
+总长 ≈ 3 min。
+
+## 出错恢复
+- 摄像头帧停：忽略，AI 会说"我没看清"
+- LLM 超时：等或重启 server，重录
+- 脚本卡住：右上角 "■ 停止脚本"
+
+## 重录
+每次录完删 `demo_runtime/`（保留 `cache/`，那里是预生成的图和 POI）。
+
+```
+rm -rf demo_runtime/keepsake_*.png demo_runtime/moments
+```
+
+cache 不删，下次启动秒开。
