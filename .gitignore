@@ -20,6 +20,9 @@ xcuserdata/
 .swiftpm/
 Package.resolved
 
+# Local .env (real keys — never commit)
+.env
+
 # Local secrets (real ones never committed)
 Resources/Secrets.plist
 Sources/LocalGravity/Resources/Secrets.plist
