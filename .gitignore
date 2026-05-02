@@ -32,3 +32,6 @@ Sources/LocalGravity/Resources/Secrets.plist
 Tests/LocalGravityTests/Fixtures/*.mp4
 Tests/LocalGravityTests/Fixtures/*.mov
 Tests/LocalGravityTests/Fixtures/*.m4a
+
+# v2 prebake artifacts
+demo_runtime/cache/
