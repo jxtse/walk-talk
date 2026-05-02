@@ -1,4 +1,12 @@
-"""OpenAI-compatible client for the internal endpoint."""
+"""OpenAI-compatible client for the internal endpoint.
+
+Supports two API shapes:
+- /v1/chat/completions for classic models (gpt-5.2, sonnet-*, gpt-4o, ...)
+- /v1/responses for newer reasoning models (gpt-5.5+) that the planner
+  endpoint refuses to serve via /chat/completions.
+
+`chat()` returns the same `AssistantMessage` regardless of route.
+"""
 from __future__ import annotations
 import base64
 import json
@@ -7,8 +15,16 @@ from typing import Any
 import httpx
 
 DEFAULT_BASE_URL = "http://100.99.139.20:18141"
-DEFAULT_PLANNER_MODEL = "gpt-5.2"
+DEFAULT_PLANNER_MODEL = "gpt-5.5"
 DEFAULT_VLM_MODEL = "gpt-4o-2024-11-20"
+
+# Models that require the Responses API (Chat Completions returns
+# unsupported_api_for_model). Match by prefix.
+_RESPONSES_API_PREFIXES = ("gpt-5.5", "gpt-5.4-mini")
+
+
+def _uses_responses_api(model: str) -> bool:
+    return any(model.startswith(p) for p in _RESPONSES_API_PREFIXES)
 
 
 @dataclass(frozen=True)
@@ -47,7 +63,15 @@ class LLMClient:
 
     def chat(self, *, messages: list[dict], tools: list[dict],
              model: str | None = None) -> AssistantMessage:
-        body = {"model": model or self.model, "messages": messages}
+        m = model or self.model
+        if _uses_responses_api(m):
+            return self._chat_responses(messages=messages, tools=tools, model=m)
+        return self._chat_completions(messages=messages, tools=tools, model=m)
+
+    # ---------------- Chat Completions (classic) ----------------
+    def _chat_completions(self, *, messages: list[dict], tools: list[dict],
+                          model: str) -> AssistantMessage:
+        body: dict[str, Any] = {"model": model, "messages": messages}
         if tools:
             body["tools"] = tools
             body["tool_choice"] = "auto"
@@ -62,6 +86,90 @@ class LLMClient:
                 args = {"_raw": tc["function"]["arguments"]}
             tcs.append(ToolCall(id=tc["id"], name=tc["function"]["name"], arguments=args))
         return AssistantMessage(content=msg.get("content"), tool_calls=tcs)
+
+    # ---------------- Responses API (gpt-5.5+) ----------------
+    def _chat_responses(self, *, messages: list[dict], tools: list[dict],
+                        model: str) -> AssistantMessage:
+        """Translate Chat-Completions-style history -> /v1/responses input."""
+        # Pull out system as `instructions`; rest becomes `input`.
+        instructions_parts: list[str] = []
+        input_items: list[dict] = []
+        for m in messages:
+            role = m.get("role")
+            if role == "system":
+                if isinstance(m.get("content"), str):
+                    instructions_parts.append(m["content"])
+                continue
+            if role == "user":
+                input_items.append({"role": "user",
+                                    "content": m.get("content") or ""})
+            elif role == "assistant":
+                # Optional textual content first
+                if m.get("content"):
+                    input_items.append({"role": "assistant",
+                                        "content": m["content"]})
+                for tc in m.get("tool_calls") or []:
+                    input_items.append({
+                        "type": "function_call",
+                        "call_id": tc["id"],
+                        "name": tc["function"]["name"],
+                        "arguments": tc["function"]["arguments"],
+                    })
+            elif role == "tool":
+                input_items.append({
+                    "type": "function_call_output",
+                    "call_id": m.get("tool_call_id", ""),
+                    "output": m.get("content") or "",
+                })
+
+        # Translate tool schemas: chat-completions wraps in {"function": {...}};
+        # responses API expects flat {type, name, description, parameters}.
+        responses_tools: list[dict] = []
+        for t in tools:
+            fn = t.get("function") if isinstance(t, dict) else None
+            if fn:
+                responses_tools.append({
+                    "type": "function",
+                    "name": fn["name"],
+                    "description": fn.get("description", ""),
+                    "parameters": fn.get("parameters", {}),
+                })
+            else:
+                responses_tools.append(t)
+
+        body: dict[str, Any] = {"model": model, "input": input_items}
+        if instructions_parts:
+            body["instructions"] = "\n\n".join(instructions_parts)
+        if responses_tools:
+            body["tools"] = responses_tools
+            body["tool_choice"] = "auto"
+
+        r = self._http.post(f"{self.base_url}/v1/responses", json=body)
+        r.raise_for_status()
+        data = r.json()
+
+        content_text: str | None = data.get("output_text") or None
+        tcs: list[ToolCall] = []
+        text_chunks: list[str] = []
+        for item in data.get("output") or []:
+            itype = item.get("type")
+            if itype == "function_call":
+                try:
+                    args = json.loads(item.get("arguments") or "{}")
+                except json.JSONDecodeError:
+                    args = {"_raw": item.get("arguments")}
+                tcs.append(ToolCall(
+                    id=item.get("call_id") or item.get("id") or "",
+                    name=item.get("name", ""),
+                    arguments=args,
+                ))
+            elif itype == "message":
+                for c in item.get("content") or []:
+                    if c.get("type") in ("output_text", "text"):
+                        text_chunks.append(c.get("text", ""))
+        if text_chunks and not content_text:
+            content_text = "".join(text_chunks)
+        return AssistantMessage(content=content_text, tool_calls=tcs)
 
     def vlm(self, *, jpeg_bytes: bytes, question: str) -> str:
         b64 = base64.b64encode(jpeg_bytes).decode()
