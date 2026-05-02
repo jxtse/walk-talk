@@ -1,0 +1,73 @@
+"""Sequential ReAct loop. One instance per session."""
+from __future__ import annotations
+import json
+import threading
+from typing import Any
+from demo.dialog import DialogLog
+from demo.llm import AssistantMessage, LLMClient
+from demo.tools import to_openai_schema
+
+
+class AgentRuntime:
+    def __init__(self, *, llm: LLMClient, tools: list, dialog: DialogLog,
+                 system_prompt: str, max_iterations: int = 8) -> None:
+        self.llm = llm
+        self.tools_by_name = {t.name: t for t in tools}
+        self.tool_schemas = [to_openai_schema(t) for t in tools]
+        self.dialog = dialog
+        self.system_prompt = system_prompt
+        self.max_iterations = max_iterations
+        self._lock = threading.Lock()  # serialize turns
+
+    def _build_messages(self, extra_user_text: str | None) -> list[dict]:
+        msgs: list[dict] = [{"role": "system", "content": self.system_prompt}]
+        for t in self.dialog:
+            if t.role in ("user", "assistant"):
+                msgs.append({"role": t.role, "content": t.text})
+        if extra_user_text is not None:
+            msgs.append({"role": "user", "content": extra_user_text})
+        return msgs
+
+    def handle_user_turn(self, user_text: str) -> None:
+        with self._lock:
+            self.dialog.append("user", user_text)
+            messages = self._build_messages(extra_user_text=None)
+            self._loop(messages)
+
+    def handle_proactive_check(self, proactive_prompt: str) -> None:
+        with self._lock:
+            messages = self._build_messages(extra_user_text=proactive_prompt)
+            self._loop(messages)
+
+    def _loop(self, messages: list[dict]) -> None:
+        for _ in range(self.max_iterations):
+            msg: AssistantMessage = self.llm.chat(
+                messages=messages, tools=self.tool_schemas)
+            if not msg.tool_calls:
+                # Final message; we expect the agent to have called
+                # speak_to_user already, so we don't surface msg.content
+                # to the user here. Just stop.
+                return
+            messages.append({
+                "role": "assistant",
+                "content": msg.content,
+                "tool_calls": [{
+                    "id": tc.id, "type": "function",
+                    "function": {"name": tc.name,
+                                 "arguments": json.dumps(tc.arguments,
+                                                         ensure_ascii=False)},
+                } for tc in msg.tool_calls],
+            })
+            for tc in msg.tool_calls:
+                tool = self.tools_by_name.get(tc.name)
+                if tool is None:
+                    result: Any = {"error": f"unknown tool: {tc.name}"}
+                else:
+                    try:
+                        result = tool.invoke(tc.arguments)
+                    except Exception as e:
+                        result = {"error": str(e)}
+                messages.append({
+                    "role": "tool", "tool_call_id": tc.id,
+                    "content": json.dumps(result, ensure_ascii=False),
+                })
