@@ -1,4 +1,4 @@
-// Sources/LocalGravity/App/RootView.swift
+// Sources/LocalGravity/App/PillarsSmokeTestView.swift
 //
 // Pillars smoke-test screen. Each button is a placeholder until the matching
 // task wires it to a real implementation:
@@ -10,7 +10,8 @@ import SwiftUI
 import Combine
 import CoreLocation
 
-public struct RootView: View {
+#if canImport(UIKit)
+public struct PillarsSmokeTestView: View {
     @State private var lastResult: String = "tap a button to smoke-test a pillar"
     @State private var showMap = false
     @StateObject private var locationModel = LocationModel()
@@ -49,7 +50,7 @@ public struct RootView: View {
                     do {
                         let resp = try await LLMClient().chat(ChatRequest(
                             // Replace with model id chosen in decisions/A4-vlm-model-selection.md
-                            model: "REPLACE_WITH_MODEL_FROM_A4",
+                            model: "gpt-4o",
                             messages: [ChatMessage(role: "user", content: "用一个字回应：到")]
                         ))
                         lastResult = "LLM: \(resp.choices.first?.message.content ?? "<empty>")"
@@ -71,7 +72,8 @@ public struct RootView: View {
 }
 
 #if DEBUG
-#Preview { RootView() }
+#Preview { PillarsSmokeTestView() }
+#endif
 #endif
 
 @MainActor

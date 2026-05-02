@@ -1,9 +1,5 @@
 import Foundation
-#if canImport(UIKit)
-import UIKit
-#endif
 
-#if canImport(UIKit)
 public final class FrameWindow {
     private let retention: TimeInterval
     private var frames: [PreviewFrame] = []
@@ -26,4 +22,3 @@ public final class FrameWindow {
     public var count: Int { lock.lock(); defer { lock.unlock() }; return frames.count }
     public func clear() { lock.lock(); defer { lock.unlock() }; frames.removeAll() }
 }
-#endif

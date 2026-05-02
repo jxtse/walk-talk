@@ -13,7 +13,8 @@ import PackageDescription
 let package = Package(
     name: "LocalGravity",
     platforms: [
-        .iOS(.v17)
+        .iOS(.v17),
+        .macOS(.v14)
     ],
     products: [
         .library(name: "LocalGravity", targets: ["LocalGravity"]),
@@ -24,6 +25,7 @@ let package = Package(
         .target(
             name: "LocalGravity",
             path: "Sources/LocalGravity",
+            exclude: ["Resources/BGM/walk_default.m4a.PLACEHOLDER.md"],
             resources: [
                 // Info.plist is intentionally not declared as a process resource
                 // here — SPM does not allow Info.plist inside libraries. It lives
@@ -39,7 +41,8 @@ let package = Package(
         .testTarget(
             name: "LocalGravityTests",
             dependencies: ["LocalGravity"],
-            path: "Tests/LocalGravityTests"
+            path: "Tests/LocalGravityTests",
+            exclude: ["Fixtures/README.md"]
         )
     ]
 )

@@ -6,7 +6,6 @@
 // and sample code on a Mac. **Do not invent method names.** If a LOOKUP
 // cannot be resolved, escalate. See docs/superpowers/decisions/A2-insta360-ios-sdk.md.
 import Foundation
-import UIKit
 
 // LOOKUP-1: import the actual Insta360 SDK module name. Examples possibly seen:
 //   import INSCameraSDK

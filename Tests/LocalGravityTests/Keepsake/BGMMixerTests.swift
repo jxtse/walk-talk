@@ -13,8 +13,7 @@ import AVFoundation
 final class BGMMixerTests: XCTestCase {
 
     private var fixtureURL: URL? {
-        Bundle.module.url(forResource: "fixture_360_30s", withExtension: "mp4")
-            ?? Bundle(for: Self.self).url(forResource: "fixture_360_30s", withExtension: "mp4")
+        TestFixtures.fixtureURL("fixture_360_30s", extension: "mp4")
     }
 
     func test_mix_addsAudioTrack() async throws {
@@ -22,11 +21,7 @@ final class BGMMixerTests: XCTestCase {
             throw XCTSkip("fixture_360_30s.mp4 not present")
         }
         // Skip if BGM hasn't been dropped in yet (placeholder phase).
-        let hasBGM = (Bundle.module.url(forResource: "walk_default",
-                                        withExtension: "m4a",
-                                        subdirectory: "BGM")
-                      ?? Bundle.module.url(forResource: "walk_default",
-                                           withExtension: "m4a")) != nil
+        let hasBGM = TestFixtures.bgmURL(named: "walk_default") != nil
         guard hasBGM else {
             throw XCTSkip("walk_default.m4a not present — see Sources/LocalGravity/Resources/BGM/walk_default.m4a.PLACEHOLDER.md")
         }

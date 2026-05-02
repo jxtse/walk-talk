@@ -27,9 +27,13 @@ import UIKit
 #if canImport(UIKit)
 public final class KeepsakeBuilder: KeepsakeBuilding {
 
-    private let scripter: ScriptGenerator
-    private let diffusion: DiffusionClient
-    private let composer: PosterComposer
+    private let scripter: ScriptGenerator?
+    private let diffusion: DiffusionClient?
+    private let composer: PosterComposer?
+    private let p5Scripter: KeepsakeScripting?
+    private let p5Diffusion: DiffusionGenerating?
+    private let p5Poster: PosterComposing?
+    private let p5Video: VideoAssembling?
 
     /// `walkStartedAt` lookup for the protocol entry point.
     /// In normal operation `WalkController` knows when the walk started;
@@ -40,6 +44,23 @@ public final class KeepsakeBuilder: KeepsakeBuilding {
         self.scripter = scripter
         self.diffusion = diffusion
         self.composer = composer
+        self.p5Scripter = nil
+        self.p5Diffusion = nil
+        self.p5Poster = nil
+        self.p5Video = nil
+    }
+
+    public init(scripter: KeepsakeScripting,
+                diffusion: DiffusionGenerating,
+                poster: PosterComposing,
+                video: VideoAssembling?) {
+        self.scripter = nil
+        self.diffusion = nil
+        self.composer = nil
+        self.p5Scripter = scripter
+        self.p5Diffusion = diffusion
+        self.p5Poster = poster
+        self.p5Video = video
     }
 
     // MARK: - Plan-canonical entry point
@@ -48,6 +69,10 @@ public final class KeepsakeBuilder: KeepsakeBuilding {
     /// (script-less, diffusion-less, map-less if needed) on any failure.
     public func buildPoster(materials: KeepsakeMaterials,
                             outputDir: URL) async throws -> URL {
+        guard let scripter, let diffusion, let composer else {
+            throw KeepsakeFailure.allFailed("poster builder dependencies unavailable")
+        }
+
         // 1. Script — failsafe on any LLM error.
         let script: KeepsakeScript
         do {
@@ -83,6 +108,35 @@ public final class KeepsakeBuilder: KeepsakeBuilding {
         return url
     }
 
+    public func build(materials: KeepsakeMaterials) async throws -> KeepsakeResult {
+        guard let scripter = p5Scripter, let poster = p5Poster else {
+            throw KeepsakeFailure.allFailed("P5 builder dependencies unavailable")
+        }
+        let script: KeepsakeScript
+        do {
+            script = try await scripter.generate(materials)
+        } catch {
+            script = Self.failsafeScript(materials)
+        }
+        _ = try? await p5Diffusion?.generate(prompt: script.posterPrompt)
+        let posterURL = try await poster.compose(materials: materials, script: script)
+
+        guard let video = p5Video,
+              materials.videoFile != nil,
+              !script.videoClips.isEmpty else {
+            return KeepsakeResult(url: posterURL, kind: .poster)
+        }
+
+        do {
+            let videoURL = try await video.assemble(materials: materials,
+                                                    posterURL: posterURL,
+                                                    script: script)
+            return KeepsakeResult(url: videoURL, kind: .video)
+        } catch {
+            return KeepsakeResult(url: posterURL, kind: .poster)
+        }
+    }
+
     // MARK: - KeepsakeBuilding protocol bridge
 
     public func build(rawVideoURL: URL?,
@@ -108,6 +162,73 @@ public final class KeepsakeBuilder: KeepsakeBuilding {
 
     /// Hard-coded script used when the LLM round-trip fails. Conservative
     /// posterPrompt + neutral title so the poster still looks intentional.
+    static func failsafeScript(_ m: KeepsakeMaterials) -> KeepsakeScript {
+        KeepsakeScript(
+            title: "一段散步",
+            narration: "脚步会记得这条路。",
+            posterPrompt: "abstract minimalist watercolor of a quiet walking path",
+            videoClips: [],
+            bgmTag: "calm",
+            highlightMomentIds: Array(m.moments.indices.prefix(3))
+        )
+    }
+}
+#else
+public final class KeepsakeBuilder: KeepsakeBuilding {
+    private let scripter: KeepsakeScripting
+    private let diffusion: DiffusionGenerating
+    private let poster: PosterComposing
+    private let video: VideoAssembling?
+
+    public init(scripter: KeepsakeScripting,
+                diffusion: DiffusionGenerating,
+                poster: PosterComposing,
+                video: VideoAssembling?) {
+        self.scripter = scripter
+        self.diffusion = diffusion
+        self.poster = poster
+        self.video = video
+    }
+
+    public func build(materials: KeepsakeMaterials) async throws -> KeepsakeResult {
+        let script: KeepsakeScript
+        do {
+            script = try await scripter.generate(materials)
+        } catch {
+            script = Self.failsafeScript(materials)
+        }
+        _ = try? await diffusion.generate(prompt: script.posterPrompt)
+        let posterURL = try await poster.compose(materials: materials, script: script)
+
+        guard let video,
+              materials.videoFile != nil,
+              !script.videoClips.isEmpty else {
+            return KeepsakeResult(url: posterURL, kind: .poster)
+        }
+
+        do {
+            let videoURL = try await video.assemble(materials: materials,
+                                                    posterURL: posterURL,
+                                                    script: script)
+            return KeepsakeResult(url: videoURL, kind: .video)
+        } catch {
+            return KeepsakeResult(url: posterURL, kind: .poster)
+        }
+    }
+
+    public func build(rawVideoURL: URL?,
+                      momentLog: MomentLog,
+                      trackBuffer: TrackBuffer) async throws -> URL {
+        let now = Date()
+        let materials = KeepsakeMaterials(track: trackBuffer.snapshot,
+                                          moments: momentLog.snapshot(),
+                                          dialog: [],
+                                          videoURL: rawVideoURL,
+                                          startedAt: now.addingTimeInterval(-1),
+                                          endedAt: now)
+        return try await build(materials: materials).url
+    }
+
     static func failsafeScript(_ m: KeepsakeMaterials) -> KeepsakeScript {
         KeepsakeScript(
             title: "一段散步",

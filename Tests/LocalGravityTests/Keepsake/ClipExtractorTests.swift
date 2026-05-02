@@ -17,8 +17,7 @@ import AVFoundation
 final class ClipExtractorTests: XCTestCase {
 
     private var fixtureURL: URL? {
-        Bundle.module.url(forResource: "fixture_360_30s", withExtension: "mp4")
-            ?? Bundle(for: Self.self).url(forResource: "fixture_360_30s", withExtension: "mp4")
+        TestFixtures.fixtureURL("fixture_360_30s", extension: "mp4")
     }
 
     func test_extract_producesClipOfExactDuration() async throws {

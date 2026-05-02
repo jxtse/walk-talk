@@ -32,6 +32,29 @@ public struct KeepsakeMaterials: Equatable {
         self.endedAt = endedAt
     }
 
+    public init(gpsTrack: [GPSPoint],
+                videoFile: URL?,
+                momentImages: [URL],
+                dialogTranscript: String) {
+        let now = Date()
+        let dialog: [DialogTurn]
+        if dialogTranscript.isEmpty {
+            dialog = []
+        } else {
+            dialog = [DialogTurn(speaker: .user, text: dialogTranscript, timestamp: now)]
+        }
+        _ = momentImages
+        self.init(track: gpsTrack,
+                  moments: [],
+                  dialog: dialog,
+                  videoURL: videoFile,
+                  startedAt: now.addingTimeInterval(-30),
+                  endedAt: now)
+    }
+
+    public var gpsTrack: [GPSPoint] { track }
+    public var videoFile: URL? { videoURL }
+
     public var durationSeconds: Double { endedAt.timeIntervalSince(startedAt) }
 
     /// Sum of pairwise great-circle distances between successive track points.

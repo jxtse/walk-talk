@@ -22,7 +22,7 @@ public protocol STTService: AnyObject {
     func requestPermission(_ done: @escaping (Bool) -> Void)
 }
 
-#if canImport(Speech) && canImport(AVFoundation)
+#if os(iOS) && canImport(Speech) && canImport(AVFoundation)
 
 /// On-device-preferred Apple Speech wrapper. Locale: zh-CN.
 ///

@@ -5,8 +5,11 @@
 // still builds. Plan reference: P1-T6.
 import SwiftUI
 import CoreLocation
+#if canImport(UIKit)
 import UIKit
+#endif
 
+#if canImport(UIKit)
 // LOOKUP-AMAP-3: import MAMapKit
 
 public struct MapPreviewView: UIViewRepresentable {
@@ -32,3 +35,4 @@ public struct MapPreviewView: UIViewRepresentable {
         // mapView.add(line)
     }
 }
+#endif

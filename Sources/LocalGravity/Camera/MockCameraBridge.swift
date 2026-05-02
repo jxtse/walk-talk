@@ -4,7 +4,9 @@
 // Emits a configurable stub UIImage at 1Hz when previewing; recording and
 // download both write small canned files. Plan reference: P1-T3.
 import Foundation
+#if canImport(UIKit)
 import UIKit
+#endif
 
 public final class MockCameraBridge: CameraBridge {
     public var isConnected: Bool = false
@@ -18,7 +20,7 @@ public final class MockCameraBridge: CameraBridge {
 
     /// Optional preloaded image for the mock to emit. If nil, falls back to
     /// the bundled `mock_frame.jpg` fixture, then finally a 1x1 black pixel.
-    public var stubFrameImage: UIImage?
+    public var stubFrameImage: PreviewImage?
 
     public init() {}
 
@@ -67,12 +69,16 @@ public final class MockCameraBridge: CameraBridge {
         onFrame(PreviewFrame(image: img, capturedAt: Date()))
     }
 
-    private static func blackPixel() -> UIImage {
+    private static func blackPixel() -> PreviewImage {
+        #if canImport(UIKit)
         UIGraphicsBeginImageContext(CGSize(width: 1, height: 1))
         UIColor.black.setFill()
         UIRectFill(CGRect(x: 0, y: 0, width: 1, height: 1))
         let img = UIGraphicsGetImageFromCurrentImageContext() ?? UIImage()
         UIGraphicsEndImageContext()
         return img
+        #else
+        return PreviewImage()
+        #endif
     }
 }

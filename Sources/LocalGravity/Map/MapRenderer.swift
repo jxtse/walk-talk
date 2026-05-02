@@ -5,8 +5,11 @@
 // Plan reference: P1-T6.
 import Foundation
 import CoreLocation
+#if canImport(UIKit)
 import UIKit
+#endif
 
+#if canImport(UIKit)
 public final class MapRenderer {
     public init() {}
 
@@ -22,3 +25,4 @@ public final class MapRenderer {
         return img
     }
 }
+#endif

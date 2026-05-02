@@ -15,13 +15,6 @@ import AVFoundation
 import UIKit
 import CoreMedia
 
-/// Abstraction so KeepsakeBuilderV2 can be unit-tested with stubs.
-public protocol VideoAssembling {
-    func assemble(materials: KeepsakeMaterials,
-                  posterURL: URL,
-                  script: KeepsakeScript) async throws -> URL
-}
-
 public struct VideoAssembler: VideoAssembling {
     public let introRenderer: TrackAnimRenderer
     public let extractor: ClipExtractor

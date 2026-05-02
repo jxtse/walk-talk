@@ -61,10 +61,11 @@ public struct BGMMixer {
 
     // MARK: - Bundle lookup
 
-    /// Look in BGM/ subdirectory first, then bundle root, against the SPM
-    /// resource bundle (preferred) and the main bundle (app context).
+    /// Look in BGM/ subdirectory first, then bundle root. `Bundle.module`
+    /// is only synthesized when SwiftPM has real resources; this repo ships
+    /// a documented placeholder until the binary BGM asset is supplied.
     private func locateBGM(named name: String) throws -> URL {
-        let candidates: [Bundle] = [.module, .main]
+        let candidates: [Bundle] = [.main]
         for bundle in candidates {
             if let url = bundle.url(forResource: name, withExtension: "m4a", subdirectory: "BGM") {
                 return url

@@ -23,6 +23,13 @@ public struct KeepsakeScript: Codable, Equatable {
             self.caption = caption
         }
 
+        public init(start: Double, duration: Double, caption: String) {
+            self.init(startSec: start, durationSec: duration, caption: caption)
+        }
+
+        public var start: Double { startSec }
+        public var duration: Double { durationSec }
+
         enum CodingKeys: String, CodingKey {
             case startSec = "start_sec"
             case durationSec = "duration_sec"
@@ -49,6 +56,18 @@ public struct KeepsakeScript: Codable, Equatable {
         self.videoClips = videoClips
         self.bgmTag = bgmTag
         self.highlightMomentIds = highlightMomentIds
+    }
+
+    public typealias Clip = VideoClip
+
+    public init(videoClips: [VideoClip], posterText: String?) {
+        let text = posterText ?? "散步"
+        self.init(title: text,
+                  narration: text,
+                  posterPrompt: text,
+                  videoClips: videoClips,
+                  bgmTag: "calm",
+                  highlightMomentIds: [])
     }
 
     enum CodingKeys: String, CodingKey {

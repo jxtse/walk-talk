@@ -3,7 +3,6 @@ import Foundation
 import UIKit
 #endif
 
-#if canImport(UIKit)
 public final class GetCameraFrameTool: Tool {
     public let spec = ToolSpec(
         name: "get_camera_frame",
@@ -29,6 +28,7 @@ public final class GetCameraFrameTool: Tool {
         guard let f = window.latest(at: target) else {
             return .object(["status": .string("no_frame")])
         }
+        #if canImport(UIKit)
         guard let jpeg = f.image.jpegData(compressionQuality: 0.7) else {
             return .object(["status": .string("encode_failed")])
         }
@@ -38,6 +38,11 @@ public final class GetCameraFrameTool: Tool {
             "image_b64": .string(b64),
             "captured_at": .string(ISO8601DateFormatter().string(from: f.capturedAt))
         ])
+        #else
+        return .object([
+            "status": .string("encode_unavailable"),
+            "captured_at": .string(ISO8601DateFormatter().string(from: f.capturedAt))
+        ])
+        #endif
     }
 }
-#endif

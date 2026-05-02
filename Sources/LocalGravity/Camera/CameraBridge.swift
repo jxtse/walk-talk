@@ -3,7 +3,17 @@
 // Abstracts the Insta360 camera so production code can be unit-tested with
 // mocks. Plan reference: P1-T3.
 import Foundation
+#if canImport(UIKit)
 import UIKit
+#endif
+
+#if canImport(UIKit)
+public typealias PreviewImage = UIImage
+#else
+public struct PreviewImage: Equatable {
+    public init() {}
+}
+#endif
 
 public enum CameraBridgeError: Error, Equatable {
     case notConnected
@@ -40,10 +50,10 @@ public protocol CameraBridge: AnyObject {
 }
 
 public struct PreviewFrame {
-    public let image: UIImage
+    public let image: PreviewImage
     public let capturedAt: Date
 
-    public init(image: UIImage, capturedAt: Date) {
+    public init(image: PreviewImage, capturedAt: Date) {
         self.image = image
         self.capturedAt = capturedAt
     }

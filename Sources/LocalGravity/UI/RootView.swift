@@ -26,7 +26,7 @@ public struct RootView: View {
     private static func makeController() -> WalkController {
         let camera: CameraBridge = Insta360CameraBridge()      // swap to MockCameraBridge in simulator
         let stt: STTService
-        #if canImport(Speech) && canImport(AVFoundation)
+        #if os(iOS) && canImport(Speech) && canImport(AVFoundation)
         stt = AppleSTTService()
         #else
         stt = MockSTTService()
@@ -50,7 +50,7 @@ public struct RootView: View {
             camera: camera,
             audio: audio,
             llm: LLMClient(),
-            model: "REPLACE_WITH_MODEL_FROM_A4",
+            model: "gpt-4o",
             vlm: LLMVLMAnalyzer()
         )
     }
@@ -66,7 +66,7 @@ final class LLMVLMAnalyzer: VLMAnalyzer {
 
     func analyze(imageB64: String, question: String) async throws -> String {
         let req = ChatRequest(
-            model: "REPLACE_WITH_VISION_MODEL_FROM_A4",
+            model: "gpt-4o",
             messages: [
                 ChatMessage(role: "system",
                             content: "你是户外散步场景识别助手。一句话回答用户问题。"),

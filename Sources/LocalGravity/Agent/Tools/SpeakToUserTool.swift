@@ -1,7 +1,5 @@
 import Foundation
 
-public protocol Speaker { func speak(_ text: String) async throws }
-
 public final class SpeakToUserTool: Tool {
     public let spec = ToolSpec(
         name: "speak_to_user",

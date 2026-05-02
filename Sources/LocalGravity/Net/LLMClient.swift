@@ -31,9 +31,9 @@ public enum LLMClientError: Error, Equatable {
 }
 
 public final class LLMClient {
-    private let endpoint: URL
-    private let apiKey: String
-    private let session: URLSession
+    let endpoint: URL
+    let apiKey: String
+    let session: URLSession
 
     public init(endpoint: URL = Secrets.shared.llmEndpoint,
                 apiKey: String = Secrets.shared.llmApiKey,
