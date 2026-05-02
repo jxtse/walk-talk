@@ -60,9 +60,30 @@ class AgentRuntime:
                                    for tc in msg.tool_calls],
                 })
             if not msg.tool_calls:
-                # Final message; we expect the agent to have called
-                # speak_to_user already, so we don't surface msg.content
-                # to the user here. Just stop.
+                # Final message. Prompt asks the model to call speak_to_user
+                # for everything it wants to say, but gpt-5.5 sometimes
+                # ignores that and dumps the reply straight into `content`.
+                # Don't drop it — surface it to the user as if speak_to_user
+                # had been called. (Skip if content is empty or looks like
+                # a proactive "stay silent" response.)
+                text = (msg.content or "").strip()
+                if text:
+                    speak = self.tools_by_name.get("speak_to_user")
+                    if speak is not None:
+                        try:
+                            speak.invoke({"text": text})
+                            if self._bus is not None:
+                                self._bus.publish({
+                                    "type": "tool_call", "source": "agent",
+                                    "name": "speak_to_user",
+                                    "args": {"text": text,
+                                             "_synthesized": True},
+                                })
+                        except Exception as e:  # noqa: BLE001
+                            self.dialog.append("assistant", text)
+                            print(f"[agent] speak fallback failed: {e}")
+                    else:
+                        self.dialog.append("assistant", text)
                 return
             messages.append({
                 "role": "assistant",
