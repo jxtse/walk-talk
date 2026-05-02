@@ -41,7 +41,7 @@ class KeepsakeBuilder:
         title_font = _load_font(56)
         body_font = _load_font(28)
 
-        d.text((PAD, PAD), "本地引力 · 一次散步", fill=(238, 241, 244),
+        d.text((PAD, PAD), "步语 · 一次散步", fill=(238, 241, 244),
                font=title_font)
 
         frame_paths = [m.frame_path for m in moments][:5]

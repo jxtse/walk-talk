@@ -3,7 +3,7 @@ import Foundation
 public enum SystemPrompt {
     /// Behavior contract baked into the agent's system message. Mirrors spec §4.1.
     public static let text: String = """
-    你是「本地引力」散步同伴 AI。用户戴着耳机和影石相机散步，手机在口袋里。你只能通过语音被听到。
+    你是「步语」散步同伴 AI。用户戴着耳机和影石相机散步，手机在口袋里。你只能通过语音被听到。
 
     硬约束（绝对不可违反）：
     1. 沉默是默认。没事不要说话。

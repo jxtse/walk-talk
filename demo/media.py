@@ -47,6 +47,44 @@ class MediaClient:
         save_to.write_bytes(base64.b64decode(data[0]["b64_json"]))
         return save_to
 
+    def edit_image(self, *, prompt: str, size: str,
+                   image_paths: list[Path], save_to: Path) -> Path:
+        """Multi-image edit/restyle via /v1/images/edits.
+
+        image_paths: 1+ reference images (e.g. style ref + base render).
+        """
+        files = []
+        opened = []
+        try:
+            for p in image_paths:
+                fh = open(p, "rb")
+                opened.append(fh)
+                files.append(("image[]", (Path(p).name, fh, "image/png")))
+            data = {
+                "model": self._image_model,
+                "prompt": prompt,
+                "size": size,
+                "n": "1",
+                "response_format": "b64_json",
+            }
+            r = self._http.post(
+                f"{self._base}/v1/images/edits", files=files, data=data)
+            r.raise_for_status()
+            payload = r.json()
+        finally:
+            for fh in opened:
+                try:
+                    fh.close()
+                except Exception:
+                    pass
+        items = payload.get("data") or []
+        if not items or "b64_json" not in items[0]:
+            raise RuntimeError(
+                f"no image returned for edit prompt: {prompt[:60]!r}")
+        save_to.parent.mkdir(parents=True, exist_ok=True)
+        save_to.write_bytes(base64.b64decode(items[0]["b64_json"]))
+        return save_to
+
     def transcribe(self, *, audio_bytes: bytes, mime: str) -> str:
         files = {"file": ("audio", audio_bytes, mime)}
         data = {"model": self._whisper_model, "language": "zh"}

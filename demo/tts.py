@@ -35,5 +35,13 @@ class TTSService:
     def say(self, text: str) -> None:
         self._q.put(text)
 
+    def flush(self) -> None:
+        """Drop any pending utterances queued for speech."""
+        try:
+            while True:
+                self._q.get_nowait()
+        except queue.Empty:
+            pass
+
     def shutdown(self) -> None:
         self._q.put(None)

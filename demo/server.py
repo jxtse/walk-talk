@@ -127,7 +127,9 @@ def _init_singletons() -> None:
         RecordMomentTool(camera=camera, moments=moments,
                          save_dir=SESSION_DIR / "moments"),
         PanCameraTool(camera=camera),
-        RecommendNearbyPlaceTool(poi_path=ROOT / "data" / "nanjing_pois.json"),
+        RecommendNearbyPlaceTool(
+            poi_path=ROOT / "data" / "nanjing_pois.json",
+            event_bus=event_bus),
     ]
     agent = AgentRuntime(llm=llm, tools=tools, dialog=dialog,
                          system_prompt=SYSTEM_PROMPT, event_bus=event_bus)
@@ -143,6 +145,7 @@ def _init_singletons() -> None:
         dialog=dialog, moments=moments, camera=camera, tts=tts,
         event_bus=event_bus, keepsake_render=_keepsake_render,
         pois_v2_path=POIS_V2_PATH,
+        time_warp=1.6,
     )
 
     def on_turn(t):
@@ -262,16 +265,47 @@ async def script_start(req: Request):
     if not path.exists():
         raise HTTPException(
             status_code=400, detail=f"unknown scenario: {scenario}")
+    # Isolate scenarios: stop any running script, drop pending TTS,
+    # and clear dialog/moments so the new scenario starts from zero.
+    try:
+        script_player.stop()
+    except Exception as e:
+        print(f"[script_start] stop failed: {e}")
+    try:
+        tts.flush()
+    except Exception as e:
+        print(f"[script_start] tts.flush failed: {e}")
+    try:
+        dialog.clear()
+        moments.clear()
+    except Exception as e:
+        print(f"[script_start] clear logs failed: {e}")
+    try:
+        event_bus.publish({"type": "session_reset", "scenario": scenario})
+    except Exception as e:
+        print(f"[script_start] publish session_reset failed: {e}")
     try:
         script_player.play(path)
     except RuntimeError as e:
         raise HTTPException(status_code=409, detail=str(e))
+    try:
+        event_bus.publish({"type": "script_state", "playing": True, "scenario": scenario})
+    except Exception as e:
+        print(f"[script_start] publish script_state failed: {e}")
     return {"status": "ok", "scenario": scenario}
 
 
 @app.post("/api/script/stop")
 async def script_stop():
     script_player.stop()
+    try:
+        tts.flush()
+    except Exception as e:
+        print(f"[script_stop] tts.flush failed: {e}")
+    try:
+        event_bus.publish({"type": "script_state", "playing": False})
+    except Exception as e:
+        print(f"[script_stop] publish failed: {e}")
     return {"status": "ok"}
 
 

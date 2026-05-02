@@ -85,17 +85,24 @@ body {
 }
 
 /* ============ s4 散步中 overlay ============ */
-.walk-hud {
-  position: absolute; top: 56px; left: 16px; right: 16px;
-  display: flex; gap: 14px; align-items: center;
-  font-size: 13px; color: #1F2937; font-weight: 500; z-index: 12;
-}
-.walk-hud b { font-weight: 700; color: #111; margin: 0 2px; }
+/* mockup 顶部已有时间/距离指示，不再额外渲染数字。
+   #walk-time / #walk-dist 仍保留在 DOM 里，只是隐藏，让 JS 能继续写值。 */
+.walk-hud { position: absolute; top: 0; left: 0; right: 0; height: 0; z-index: 12; pointer-events: none; }
+.walk-hud > span:not(.walk-end) { display: none; }
 .walk-hud .walk-end {
-  margin-left: auto; background: rgba(255,255,255,.85);
-  padding: 4px 10px; border-radius: 14px; cursor: pointer;
-  font-size: 12px; color: var(--green-dark);
+  pointer-events: auto;
+  position: absolute; top: 60px; right: 14px;
+  display: inline-flex; align-items: center;
+  padding: 5px 12px; border-radius: 999px;
+  background: rgba(255,255,255,.7);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(0,0,0,.04);
+  font-size: 12px; color: #6B7280; font-weight: 500;
+  cursor: pointer; user-select: none;
+  transition: background .15s, color .15s;
 }
+.walk-hud .walk-end:hover { background: #fff; color: #111; }
 
 .ai-bubble-overlay {
   position: absolute; top: 38%; left: 50%; transform: translateX(-50%);
@@ -108,17 +115,27 @@ body {
 .ai-bubble-overlay .face { font-size: 14px; color: var(--green-dark); }
 .ai-bubble-overlay .text { line-height: 1.4; }
 
+/* mockup 自带大绿麦按钮，这里只做一个透明热区盖在它上面，避免重复出现"两个麦"。
+   录音中给一圈淡淡的绿色脉冲提示。 */
 .mic-fab {
-  position: absolute; bottom: 6%; left: 50%; transform: translateX(-50%);
-  width: 64px; height: 64px; border-radius: 50%;
-  background: var(--green); border: 4px solid #fff;
-  box-shadow: 0 4px 16px rgba(123,198,126,.6);
-  color: #fff; font-size: 24px; cursor: pointer; z-index: 14;
+  position: absolute; bottom: 9%; left: 50%; transform: translateX(-50%);
+  width: 92px; height: 92px; border-radius: 50%;
+  background: transparent; border: 0;
+  color: transparent; font-size: 0; cursor: pointer; z-index: 14;
+  -webkit-tap-highlight-color: transparent;
+  outline: none;
   transition: transform .15s;
 }
-.mic-fab:active { transform: translateX(-50%) scale(.92); }
-.mic-fab.recording { background: #DC2626; animation: pulse 1s infinite; }
-@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.55} }
+.mic-fab:active { transform: translateX(-50%) scale(.94); }
+.mic-fab.recording {
+  box-shadow: 0 0 0 0 rgba(74,160,90,.55);
+  animation: mic-pulse 1.4s infinite;
+}
+@keyframes mic-pulse {
+  0%   { box-shadow: 0 0 0 0   rgba(74,160,90,.55); }
+  70%  { box-shadow: 0 0 0 22px rgba(74,160,90,0); }
+  100% { box-shadow: 0 0 0 0   rgba(74,160,90,0); }
+}
 
 .drawer-handle { z-index: 13; }
 
@@ -181,29 +198,57 @@ body {
 }
 .flash.show { opacity: 1; }
 
-/* ============ s5 POI overlay：完全盖住 mockup 自带的涂鸦墙卡 ============ */
+/* ============ s5 POI overlay：完全盖住 mockup 自带的涂鸦墙卡 + 按钮 ============
+   贴边、配 mockup 米白底色、用 mockup 卡片那种偏圆的圆角，看起来像同一张卡 */
 .poi-overlay {
-  position: absolute; left: 6%; right: 6%; top: 56%;
-  height: 34%;
-  background: #fff; border-radius: 18px; overflow: hidden;
-  box-shadow: 0 8px 28px rgba(0,0,0,.18);
-  pointer-events: none;
+  position: absolute; left: 0; right: 0; top: 50%; bottom: 0;
+  background: #FFFDF7;
+  border-radius: 28px 28px 0 0;
+  overflow: hidden;
+  box-shadow: 0 -6px 24px rgba(0,0,0,.12);
   display: flex; flex-direction: column;
   z-index: 8;
+  padding: 14px 18px 22px;
 }
 .poi-overlay .poi-img {
   width: 100%; flex: 1 1 auto; min-height: 0;
   object-fit: cover; display: block;
   background: #eee;
+  border-radius: 18px;
+}
+.poi-overlay .poi-body {
+  padding: 12px 4px 0;
+  flex: 0 0 auto;
 }
 .poi-overlay .poi-name {
-  font-size: 16px; font-weight: 700; padding: 10px 14px 4px; color: #1F2937;
-  flex: 0 0 auto;
+  font-size: 17px; font-weight: 700; color: #1F2937;
 }
 .poi-overlay .poi-tag {
-  font-size: 12px; padding: 0 14px 12px; color: #6B7280;
-  flex: 0 0 auto;
+  font-size: 12px; color: #6B7280; margin-top: 4px; line-height: 1.5;
 }
+.poi-overlay .poi-meta {
+  display: flex; gap: 12px; margin-top: 6px;
+  font-size: 11px; color: #4B5563;
+}
+.poi-overlay .poi-meta span:empty { display: none; }
+.poi-overlay .poi-actions {
+  display: flex; gap: 8px; margin-top: 14px;
+}
+.poi-btn {
+  flex: 1; padding: 11px 8px; border-radius: 22px;
+  font-size: 13px; font-weight: 600; cursor: pointer;
+  border: 1px solid transparent;
+  font-family: inherit;
+}
+.poi-btn.primary {
+  background: var(--green); color: #fff;
+  box-shadow: 0 4px 12px rgba(123,198,126,.45);
+}
+.poi-btn.primary:active { transform: scale(.97); }
+.poi-btn.ghost {
+  background: #fff; color: #1F2937; border-color: #E5E7EB;
+}
+.poi-btn.ghost:active { background: #F9FAFB; }
 
 /* ============ s6 笔记 overlay ============ */
 .notes-overlay {
@@ -242,6 +287,39 @@ body {
 }
 .keepsake-overlay img {
   width: 100%; height: 100%; object-fit: cover; display: block;
+}
+
+/* ============ finale overlay (full-phone keepsake popup) ============ */
+.finale-overlay {
+  position: absolute; inset: 0;
+  background: rgba(20, 20, 28, 0.92);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 9999;
+  border-radius: inherit;
+  animation: finale-fade-in 360ms ease-out;
+}
+.finale-overlay img {
+  max-width: 92%; max-height: 88%;
+  border-radius: 14px;
+  box-shadow: 0 20px 60px rgba(0,0,0,.55);
+  background: #fff;
+  object-fit: contain;
+  animation: finale-pop 520ms cubic-bezier(.2,.9,.3,1.2);
+}
+.finale-overlay button {
+  position: absolute; top: 12px; right: 12px;
+  width: 32px; height: 32px; border-radius: 50%;
+  border: none; background: rgba(255,255,255,.9);
+  font-size: 20px; line-height: 30px; cursor: pointer;
+  color: #333; box-shadow: 0 4px 12px rgba(0,0,0,.3);
+}
+@keyframes finale-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes finale-pop {
+  from { opacity: 0; transform: scale(.7) translateY(20px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
 }
 
 /* s7 沿途真实照片覆盖到 mockup 的两张相册占位上 */
@@ -367,6 +445,79 @@ body {
 }
 .scenario-btns button:hover { background: rgba(123,198,126,.12); }
 .scenario-btns button.stop { border-color: #DC2626; color: #DC2626; }
+
+/* ============ Concept card overlay (scenario-3) ============ */
+.concept-overlay {
+  position: absolute; inset: 0; z-index: 60;
+  background: rgba(8, 12, 20, 0.55); backdrop-filter: blur(4px);
+  display: flex; align-items: center; justify-content: center;
+  animation: concept-fade-in 220ms ease-out;
+}
+@keyframes concept-fade-in { from { opacity: 0; } to { opacity: 1; } }
+.concept-card {
+  width: 88%; max-width: 320px;
+  background: #fff; border-radius: 18px; overflow: hidden;
+  box-shadow: 0 18px 48px rgba(0,0,0,0.35);
+  font-family: inherit; color: #1a1d24;
+  animation: concept-slide-in 260ms cubic-bezier(.2,.8,.2,1);
+}
+@keyframes concept-slide-in {
+  from { transform: translateY(16px) scale(.96); opacity: 0; }
+  to   { transform: translateY(0) scale(1); opacity: 1; }
+}
+.concept-card__hdr {
+  display: flex; justify-content: space-between; align-items: flex-start;
+  padding: 14px 16px 8px; gap: 8px;
+}
+.concept-card__title { font-size: 16px; font-weight: 700; line-height: 1.2; }
+.concept-card__subtitle { font-size: 11px; color: #8a93a6; margin-top: 2px; }
+.concept-card__close {
+  border: 0; background: transparent; font-size: 22px; line-height: 1;
+  color: #8a93a6; cursor: pointer; padding: 0 4px;
+}
+.concept-card__close:hover { color: #1a1d24; }
+.concept-card__img {
+  width: 100%; aspect-ratio: 16/10; object-fit: cover; display: block;
+  background: #f0f2f6;
+}
+.concept-card__body {
+  padding: 12px 16px; font-size: 13px; line-height: 1.55; color: #2a2f3a;
+  white-space: pre-wrap;
+}
+.concept-card__tags {
+  display: flex; flex-wrap: wrap; gap: 6px; padding: 0 16px 14px;
+}
+.concept-card__tags span {
+  font-size: 11px; padding: 3px 8px; border-radius: 999px;
+  background: #eef2f7; color: #4b5466;
+}
+
+/* simulated tap flash on POI yes/no buttons (scripted scenarios) */
+@keyframes poi-tap-pulse {
+  0%   { transform: scale(1);    box-shadow: 0 0 0 0   rgba(58,108,244,0.55); }
+  18%  { transform: scale(.90);  box-shadow: 0 0 0 6px rgba(58,108,244,0.45); }
+  60%  { transform: scale(1.06); box-shadow: 0 0 0 18px rgba(58,108,244,0);    }
+  100% { transform: scale(1);    box-shadow: 0 0 0 0   rgba(58,108,244,0);    }
+}
+.poi-btn.tap-flash {
+  animation: poi-tap-pulse 900ms cubic-bezier(.2,.8,.2,1);
+  outline: 2px solid #3A6CF4; outline-offset: 3px;
+}
+/* fake fingertip dot that drops onto the button to make the "tap" obvious */
+@keyframes tap-dot-fall {
+  0%   { transform: translate(-50%, -140%) scale(.4); opacity: 0; }
+  35%  { transform: translate(-50%, -50%)  scale(1);   opacity: .85; }
+  70%  { transform: translate(-50%, -50%)  scale(1.6); opacity: .35; }
+  100% { transform: translate(-50%, -50%)  scale(2.0); opacity: 0; }
+}
+.tap-dot {
+  position: absolute; left: 50%; top: 50%;
+  width: 28px; height: 28px; border-radius: 50%;
+  background: rgba(58,108,244,.55);
+  border: 2px solid #3A6CF4;
+  pointer-events: none;
+  animation: tap-dot-fall 900ms cubic-bezier(.2,.8,.2,1) forwards;
+}
 
 .screen-jump {
   display: flex; gap: 6px; flex-wrap: wrap; align-items: center;

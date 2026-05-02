@@ -44,6 +44,10 @@ class DialogLog:
         with self._lock:
             return iter(list(self._turns))
 
+    def clear(self) -> None:
+        with self._lock:
+            self._turns.clear()
+
     def subscribe(self, fn: Callable[[DialogTurn], None]) -> Callable[[], None]:
         with self._lock:
             self._subs.append(fn)
@@ -70,3 +74,7 @@ class MomentLog:
     def __iter__(self) -> Iterator[Moment]:
         with self._lock:
             return iter(list(self._items))
+
+    def clear(self) -> None:
+        with self._lock:
+            self._items.clear()

@@ -1,19 +1,79 @@
 {
   "scenario_id": "serendipity",
   "title": "偶遇推荐",
-  "duration_s": 60,
+  "duration_s": 70,
   "events": [
     {"at": 0.0, "type": "dialog", "role": "ai", "text": "走着走着……", "speak": true},
-    {"at": 10.0, "type": "dialog", "role": "ai", "text": "你左边 100m 那家叫豆号的小咖啡，藏在湖边木屋里，靠水那张桌子常常没人，要不要去坐坐？", "speak": true},
-    {"at": 11.0, "type": "poi_card", "poi_id": "beans_solo"},
-    {"at": 11.5, "type": "direction", "arrow": "left", "distance_m": 100, "eta_min": 1, "label": "Beans Solo 豆号咖啡"},
-    {"at": 25.0, "type": "dialog", "role": "user", "text": "长什么样？"},
-    {"at": 26.0, "type": "poi_image_swap", "poi_id": "beans_solo", "to_image_id": "beans_solo_interior"},
-    {"at": 27.0, "type": "dialog", "role": "ai", "text": "里面是这样，木桌临窗，吧台后那位在做手冲。", "speak": true},
+
+    {"at": 1.0, "type": "llm_raw", "phase": "thought",
+     "text": "用户在散步，没有提问。后台保持每 ~6s 抽一帧做视觉理解，看看周围有没有值得提的东西。"},
+
+    {"at": 3.0, "type": "tool_call", "name": "get_camera_frame",
+     "args": {"reason": "周期性环境扫视"}},
+    {"at": 3.5, "type": "tool_call", "name": "analyze_frame_vlm",
+     "args": {"question": "画面里有什么？人多吗？有特别的店或风景吗？"}},
+    {"at": 5.0, "type": "llm_raw", "phase": "observe",
+     "text": "VLM: 画面是湖边步道，左前方有几栋木屋，其中一栋挂着小招牌，看起来像独立咖啡馆，门前没有排队。背景：玄武湖水面、柳树。"},
+    {"at": 6.0, "type": "llm_raw", "phase": "thought",
+     "text": "木屋咖啡馆 + 临湖 + 没人排 → 符合用户偏好（之前对话里 ta 说喜欢安静的、有水景的地方）。值得主动提一句，但先确认一下店名/距离再开口。"},
+
+    {"at": 7.5, "type": "tool_call", "name": "recommend_nearby_place",
+     "args": {"category": "cafe", "radius_m": 200, "filter": "lakeside,independent"}},
+    {"at": 9.0, "type": "llm_raw", "phase": "observe",
+     "text": "POI 检索: 命中 'Beans Solo 豆号咖啡'，距离 100m，方向 西偏南，评分 4.6，描述 '湖边木屋·手冲精品·临窗位'。距离合适，不打断散步节奏。"},
+
+    {"at": 10.0, "type": "llm_raw", "phase": "plan",
+     "text": "决定主动开口。措辞要轻——是'要不要'而不是'你应该'。同时把 POI 卡片和方向箭头一起推给用户，让 ta 一眼能判断。"},
+
+    {"at": 11.0, "type": "tool_call", "name": "speak_to_user",
+     "args": {"text": "你左边 100m 那家叫豆号的小咖啡，藏在湖边木屋里，靠水那张桌子常常没人，要不要去坐坐？"}},
+    {"at": 11.1, "type": "dialog", "role": "ai",
+     "text": "你左边 100m 那家叫豆号的小咖啡，藏在湖边木屋里，靠水那张桌子常常没人，要不要去坐坐？",
+     "speak": true},
+    {"at": 11.5, "type": "poi_card", "poi_id": "beans_solo"},
+    {"at": 12.0, "type": "direction", "arrow": "left", "distance_m": 100,
+     "eta_min": 1, "label": "Beans Solo 豆号咖啡"},
+
+    {"at": 14.0, "type": "llm_raw", "phase": "thought",
+     "text": "已开口，等用户反应。继续保持视觉监看但降低主动建议的优先级（避免连续打扰）。"},
+
+    {"at": 22.0, "type": "dialog", "role": "user", "text": "长什么样？"},
+    {"at": 23.0, "type": "llm_raw", "phase": "thought",
+     "text": "用户问'长什么样' → 想看内景。POI 卡片里有 alt_image_id=beans_solo_interior，直接换图，比再描述一遍更直观。"},
+    {"at": 23.5, "type": "tool_call", "name": "get_poi_image",
+     "args": {"poi_id": "beans_solo", "view": "interior"}},
+    {"at": 24.0, "type": "poi_image_swap", "poi_id": "beans_solo",
+     "to_image_id": "beans_solo_interior"},
+    {"at": 25.0, "type": "tool_call", "name": "speak_to_user",
+     "args": {"text": "里面是这样，木桌临窗，吧台后那位在做手冲。"}},
+    {"at": 25.1, "type": "dialog", "role": "ai",
+     "text": "里面是这样，木桌临窗，吧台后那位在做手冲。", "speak": true},
+
+    {"at": 33.0, "type": "tool_call", "name": "get_camera_frame",
+     "args": {"reason": "用户还在原地，再看一眼现场情况"}},
+    {"at": 33.5, "type": "tool_call", "name": "analyze_frame_vlm",
+     "args": {"question": "咖啡馆门口现在有人吗？大概几个？"}},
+    {"at": 35.0, "type": "llm_raw", "phase": "observe",
+     "text": "VLM: 木屋门口出现 2-3 个人在看菜单，似乎在等位。窗边的那张临湖位仍空着。"},
+    {"at": 36.0, "type": "llm_raw", "phase": "thought",
+     "text": "信息有时效性 → 等用户决定后立即同步现场情况，避免到了发现已经满座。"},
+
     {"at": 40.0, "type": "dialog", "role": "user", "text": "走吧"},
-    {"at": 41.0, "type": "tool_call", "name": "pan_camera", "args": {"direction": "left", "reason": "看一眼咖啡馆方向"}},
-    {"at": 41.2, "type": "ptz", "pan": -25, "tilt": 0, "zoom": 100, "source": "script"},
-    {"at": 55.0, "type": "dialog", "role": "ai", "text": "到了，门口排了 3 个人。", "speak": true},
+    {"at": 41.0, "type": "llm_raw", "phase": "plan",
+     "text": "用户答应去 → 转向导航/带路状态。先把镜头摇向咖啡馆方向，让用户看到目标。"},
+    {"at": 41.5, "type": "tool_call", "name": "pan_camera",
+     "args": {"direction": "left", "reason": "把镜头转向咖啡馆"}},
+    {"at": 41.7, "type": "ptz", "pan": -25, "tilt": 0, "zoom": 100, "source": "script"},
+
+    {"at": 50.0, "type": "tool_call", "name": "record_moment",
+     "args": {"label": "偶遇·豆号咖啡"}},
+    {"at": 50.5, "type": "moment", "label": "偶遇·豆号咖啡"},
+
+    {"at": 55.0, "type": "tool_call", "name": "speak_to_user",
+     "args": {"text": "到了，门口排了 3 个人。"}},
+    {"at": 55.1, "type": "dialog", "role": "ai",
+     "text": "到了，门口排了 3 个人。", "speak": true},
+
     {"at": 58.0, "type": "keepsake_render", "image_id": "serendipity_keepsake"}
   ]
 }

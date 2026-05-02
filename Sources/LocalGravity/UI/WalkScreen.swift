@@ -19,7 +19,7 @@ public struct WalkScreen: View {
 
     public var body: some View {
         VStack(spacing: 24) {
-            Text("本地引力")
+            Text("步语")
                 .font(.largeTitle)
                 .bold()
 

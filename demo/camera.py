@@ -164,8 +164,31 @@ class _PTZWorker(threading.Thread):
 
 # --- CameraController -------------------------------------------------------
 
+class _StubPTZ:
+    """Fallback when Insta360 PTZ-capable camera isn't connected.
+    Pretends pan/tilt/zoom move, so the rest of the system keeps working
+    against a plain integrated camera."""
+    def __init__(self) -> None:
+        self.init_error = None
+        self._state = {PROP_PAN: 0, PROP_TILT: 0, PROP_ZOOM: 100}
+        self.range = {
+            PROP_PAN:  (-180, 180, 1, 0),
+            PROP_TILT: (-90,   90, 1, 0),
+            PROP_ZOOM: (100,  400, 1, 100),
+        }
+
+    def get_prop(self, prop): return self._state[prop]
+    def set_prop(self, prop, value):
+        mn, mx, *_ = self.range[prop]
+        v = max(mn, min(mx, int(value)))
+        self._state[prop] = v
+        return v
+    def call(self, fn, *args, timeout=3.0): return fn(*args)
+
+
 class CameraController:
     DEVICE_NAME = "Insta360 Link 2"
+    FALLBACK_DEVICE_NAME = "Integrated Camera"
     FRAME_WINDOW_SECONDS = 300
 
     def __init__(self) -> None:
@@ -175,7 +198,12 @@ class CameraController:
         self._ptz.start()
         self._ptz.ready.wait()
         if self._ptz.init_error:
-            raise RuntimeError(f"PTZ init failed: {self._ptz.init_error}")
+            print(f"[camera] Insta360 unavailable: {self._ptz.init_error}; "
+                  f"falling back to {self.FALLBACK_DEVICE_NAME} with stub PTZ.")
+            self._ptz = _StubPTZ()
+            self._device_in_use = self.FALLBACK_DEVICE_NAME
+        else:
+            self._device_in_use = self.DEVICE_NAME
 
         # frame state
         self._frames: deque[Frame] = deque()
@@ -315,7 +343,7 @@ class CameraController:
             "-rtbufsize", "100M",
             "-video_size", "1280x720",
             "-framerate", "30",
-            "-i", f"video={self.DEVICE_NAME}",
+            "-i", f"video={self._device_in_use}",
             "-an",
             "-vf", "fps=15",
             "-q:v", "5",

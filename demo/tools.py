@@ -136,18 +136,37 @@ class PanCameraTool:
 
 class RecommendNearbyPlaceTool:
     name = "recommend_nearby_place"
-    description = "随机推荐一个尚未被推荐过的附近地点。每次返回一个不同的。"
+    description = (
+        "推荐一个附近的地点给用户：会自动把卡片推到前端 S5（图片+介绍+按钮）。"
+        "返回该 POI 的完整信息，你可以基于 tagline/vibe 用 speak_to_user 跟"
+        "用户说一句，比如：'前面 200 米有家鸡鸣寺，去看看吗？'"
+    )
     parameters = {"type": "object", "properties": {}}
 
-    def __init__(self, poi_path: Path) -> None:
+    def __init__(self, poi_path: Path, event_bus=None) -> None:
         data = json.loads(Path(poi_path).read_text(encoding="utf-8"))
         self._pois: list[dict] = list(data["pois"])
         self._used: set[str] = set()
+        self._bus = event_bus
 
     def invoke(self, args: dict) -> dict:
         for p in self._pois:
             if p["id"] not in self._used:
                 self._used.add(p["id"])
+                if self._bus is not None:
+                    try:
+                        self._bus.publish({
+                            "type": "poi_card",
+                            "poi_id": p["id"],
+                            "name": p["name"],
+                            "tagline": p.get("tagline", ""),
+                            "vibe": p.get("vibe", ""),
+                            "distance_m": p.get("imagined_distance_m"),
+                            "rating": p.get("rating"),
+                            "image_url": p.get("image_url", ""),
+                        })
+                    except Exception as e:  # noqa: BLE001
+                        print(f"[recommend] publish failed: {e}")
                 return {"status": "ok", "place": p}
         return {"status": "exhausted"}
 

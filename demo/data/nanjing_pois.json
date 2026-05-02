@@ -13,7 +13,9 @@
       "latitude": 32.07553,
       "imagined_distance_m": 0,
       "tagline": "南京城内最大的皇家园林湖泊，环湖一圈约 9 公里",
-      "vibe": "湖光、樱洲、远山，最适合慢走"
+      "vibe": "湖光、樱洲、远山，最适合慢走",
+      "image_url": "/static/routes/jinling/shengtai2_03_河西生态公园_水杉倒影.jpg",
+      "rating": 4.8
     },
     {
       "id": "jiming_temple",
@@ -22,7 +24,9 @@
       "latitude": 32.06219,
       "imagined_distance_m": 200,
       "tagline": "南朝四百八十寺之首，春天樱花路尽头的素斋名刹",
-      "vibe": "黄墙、香火、台城旁的高地视野"
+      "vibe": "黄墙、香火、台城旁的高地视野",
+      "image_url": "/static/routes/jinling/yunmeng_01_云梦公园_夜樱倒影.jpg",
+      "rating": 4.7
     },
     {
       "id": "zifeng_tower",
@@ -31,7 +35,9 @@
       "latitude": 32.06303,
       "imagined_distance_m": 600,
       "tagline": "南京第一高楼，450 米 89 层，鼓楼广场地标",
-      "vibe": "玻璃幕墙、城市天际线背景板"
+      "vibe": "玻璃幕墙、城市天际线背景板",
+      "image_url": "/static/routes/jinling/qingao_00_青奥中心_扎哈双塔仰拍.jpg",
+      "rating": 4.5
     },
     {
       "id": "xinjiekou",
@@ -40,7 +46,9 @@
       "latitude": 32.04210,
       "imagined_distance_m": 1800,
       "tagline": "中华第一商圈，地铁 1/2 号线交汇",
-      "vibe": "人潮、霓虹、孙中山雕像下的车流"
+      "vibe": "人潮、霓虹、孙中山雕像下的车流",
+      "image_url": "/static/routes/jinling/jinlingtiandi_03_金陵天地_夜景车流.jpg",
+      "rating": 4.4
     },
     {
       "id": "fuzimiao",
@@ -49,7 +57,9 @@
       "latitude": 32.02250,
       "imagined_distance_m": 4500,
       "tagline": "秦淮河畔孔庙建筑群，灯会与小吃集散地",
-      "vibe": "河、画舫、糖芋苗、鸭血粉丝汤"
+      "vibe": "河、画舫、糖芋苗、鸭血粉丝汤",
+      "image_url": "/static/routes/jinling/nanjingyan_04_南京眼_灯笼栏杆夜色.jpg",
+      "rating": 4.6
     },
     {
       "id": "ming_xiaoling",
@@ -58,7 +68,9 @@
       "latitude": 32.05600,
       "imagined_distance_m": 5200,
       "tagline": "明太祖朱元璋陵墓，紫金山南麓神道两侧石象路",
-      "vibe": "石象、银杏、秋色"
+      "vibe": "石象、银杏、秋色",
+      "image_url": "/static/routes/jinling/youyi2_00_友谊公园_湖心红房子.jpg",
+      "rating": 4.7
     }
   ]
 }

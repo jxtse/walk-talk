@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=1500">
-<title>本地引力 · 步语 demo</title>
+<title>步语 BuYu · demo</title>
 <link rel="stylesheet" href="/static/styles.css">
 </head>
 <body>
@@ -96,11 +96,8 @@
   <section class="screen" id="s4" data-anim="zoom-in">
     <img class="bg" src="/static/mockup/s4.png" alt="">
 
-    <!-- AI 气泡（替换 mockup 里那个示例气泡） -->
-    <div class="ai-bubble-overlay" id="ai-bubble">
-      <span class="face">◡‿◡</span>
-      <span class="text" id="ai-bubble-text">准备好了，按下面那个绿色按钮跟我说话</span>
-    </div>
+    <!-- AI 气泡完全交给 mockup 背景，不再渲染任何浮层 -->
+
 
     <!-- 顶部 hud：时间 / 距离（真的会滚动） -->
     <div class="walk-hud">
@@ -109,9 +106,9 @@
       <span class="walk-end" data-go="s6" data-action="end">结束 ▾</span>
     </div>
 
-    <!-- 上滑把手：打开对话抽屉 -->
+    <!-- 上滑把手：盖在 mockup 的小箭头上，点击打开抽屉 -->
     <div class="hot drawer-handle" id="drawer-handle"
-         style="bottom:13%;left:42%;width:16%;height:5%"></div>
+         style="bottom:21%;left:40%;width:20%;height:5%"></div>
 
     <!-- 底部麦克风按钮（真实可录音） -->
     <button class="mic-fab" id="mic-fab" title="按住或点击说话">🎙</button>
@@ -137,16 +134,23 @@
   <!-- s5 POI 偶遇弹卡 -->
   <section class="screen" id="s5" data-anim="slide-up">
     <img class="bg" src="/static/mockup/s5.png" alt="">
-    <!-- 真实 POI 内容覆盖 mockup 的卡片 -->
+    <!-- 真实 POI 全屏覆盖：图 + 名 + 介绍 + 三按钮，完全盖住 mockup 自带的涂鸦墙和按钮 -->
     <div class="poi-overlay" id="poi-overlay">
       <img class="poi-img" id="poi-img" src="" alt="">
-      <div class="poi-name" id="poi-name">涂鸦墙</div>
-      <div class="poi-tag" id="poi-tag">这面墙大概每个月都会被重新画一次</div>
+      <div class="poi-body">
+        <div class="poi-name" id="poi-name">—</div>
+        <div class="poi-tag" id="poi-tag">—</div>
+        <div class="poi-meta">
+          <span id="poi-dist"></span>
+          <span id="poi-rating"></span>
+        </div>
+        <div class="poi-actions">
+          <button class="poi-btn primary" data-go="s4" data-action="poi-yes">是</button>
+          <button class="poi-btn ghost" data-go="s4" data-action="poi-no">否</button>
+          <button class="poi-btn ghost" data-action="poi-chat">聊聊这个</button>
+        </div>
+      </div>
     </div>
-    <div class="hot primary" style="bottom:2.5%;left:6%;width:38%;height:5%"
-         data-go="s4" data-action="mark"></div>
-    <div class="hot" style="bottom:2.5%;right:6%;width:38%;height:5%"
-         data-go="s4" data-action="skip"></div>
   </section>
 
   <!-- s6 散步笔记 -->
@@ -174,7 +178,6 @@
     <div class="keepsake-overlay" id="keepsake-overlay" style="display:none">
       <img id="keepsake-img" src="" alt="散步合影">
     </div>
-
     <!-- 沿途看过的真实 POI 照片：覆盖 mockup 上的两张占位照片 -->
     <div class="plog-photo-overlay" id="plog-photo-1" style="display:none">
       <img src="" alt="">
@@ -192,6 +195,28 @@
   </section>
 
   <div class="home-bar"></div>
+
+  <!-- ============ Concept card overlay (scenario-3 exhibit explanations) ============ -->
+  <div class="concept-overlay" id="concept-overlay" style="display:none;">
+    <div class="concept-card" role="dialog">
+      <div class="concept-card__hdr">
+        <div>
+          <div class="concept-card__title" id="concept-title">概念解释</div>
+          <div class="concept-card__subtitle" id="concept-subtitle"></div>
+        </div>
+        <button class="concept-card__close" id="concept-close" aria-label="关闭">×</button>
+      </div>
+      <img class="concept-card__img" id="concept-img" alt="">
+      <div class="concept-card__body" id="concept-body"></div>
+      <div class="concept-card__tags" id="concept-tags"></div>
+    </div>
+  </div>
+
+  <!-- ============ Final keepsake overlay (full-phone, independent of s7) ============ -->
+  <div class="finale-overlay" id="finale-overlay" style="display:none;">
+    <img id="finale-img" src="" alt="散步笔记">
+    <button id="finale-close" aria-label="关闭">×</button>
+  </div>
 </div>
 
 <!-- ============ 右：技术面板 ============ -->
@@ -203,7 +228,7 @@
       <button data-scenario="serendipity">▶ 场景 B · 偶遇</button>
       <button data-scenario="jinling">▶ 场景 C · 金陵天地</button>
       <button data-scenario="free">⌨ 自由模式</button>
-      <button class="stop" id="script-stop-btn">■ 停止脚本</button>
+      <button class="stop" id="script-stop-btn" style="display:none;">■ 停止脚本</button>
     </div>
     <div class="screen-jump">
       <span>跳转屏：</span>

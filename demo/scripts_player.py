@@ -38,15 +38,28 @@ class ScriptPlayer:
         return {p["poi_id"]: p for p in spec.get("scripted", [])}
 
     def play(self, scenario_path: Path) -> None:
+        # If a scenario is already playing, stop it first so the new
+        # scenario starts cleanly (instead of raising).
         if self._thread and self._thread.is_alive():
-            raise RuntimeError("scenario already playing")
+            self._stop.set()
+            self._thread.join(timeout=2.0)
         scenario = json.loads(scenario_path.read_text(encoding="utf-8"))
         events = sorted(scenario.get("events", []), key=lambda e: e["at"])
-        self._stop.clear()
+        # Per-scenario time_warp override (lets a scenario request 1:1
+        # real-time playback regardless of the player default).
+        warp = scenario.get("time_warp")
+        if warp is None:
+            warp = self._time_warp
+        else:
+            warp = max(float(warp), 0.001)
+        self._stop = threading.Event()
         self._thread = threading.Thread(
-            target=self._run, args=(scenario["scenario_id"], events),
+            target=self._run, args=(scenario["scenario_id"], events, warp),
             daemon=True, name=f"script-{scenario['scenario_id']}")
         self._thread.start()
+
+    def is_playing(self) -> bool:
+        return bool(self._thread and self._thread.is_alive())
 
     def stop(self) -> None:
         self._stop.set()
@@ -55,17 +68,23 @@ class ScriptPlayer:
         if self._thread:
             self._thread.join(timeout=timeout)
 
-    def _run(self, scenario_id: str, events: list[dict]) -> None:
+    def _run(self, scenario_id: str, events: list[dict],
+             warp: float | None = None) -> None:
+        if warp is None:
+            warp = self._time_warp
         t0 = time.monotonic()
+        completed = True
         for idx, ev in enumerate(events):
             if self._stop.is_set():
-                return
-            target = ev["at"] / self._time_warp
+                completed = False
+                break
+            target = ev["at"] / warp
             now = time.monotonic() - t0
             wait = target - now
             if wait > 0:
                 if self._stop.wait(timeout=wait):
-                    return
+                    completed = False
+                    break
             self._bus.publish({
                 "type": "script", "scenario": scenario_id,
                 "step_index": idx, "beat": ev.get("type")})
@@ -73,6 +92,14 @@ class ScriptPlayer:
                 self._dispatch(ev)
             except Exception as e:  # noqa: BLE001
                 print(f"[script] dispatch failed at {idx}/{ev}: {e}")
+        # Always notify the frontend that no scenario is currently playing,
+        # whether we finished naturally or got stopped externally.
+        try:
+            self._bus.publish({
+                "type": "script_state", "playing": False,
+                "scenario": scenario_id, "completed": completed})
+        except Exception as e:  # noqa: BLE001
+            print(f"[script] publish completion failed: {e}")
 
     def _dispatch(self, ev: dict[str, Any]) -> None:
         et = ev["type"]
@@ -90,6 +117,48 @@ class ScriptPlayer:
             self._bus.publish({
                 "type": "tool_call", "source": "script",
                 "name": ev["name"], "args": ev.get("args", {})})
+        elif et == "llm_raw":
+            # Fake an internal-monologue / raw-LLM-trace event so the
+            # right-side "LLM 原始消息" panel reflects what the agent is
+            # "thinking" during a scripted scenario.
+            self._bus.publish({
+                "type": "llm_raw", "source": "script",
+                "phase": ev.get("phase", "thought"),
+                "text": ev.get("text", ""),
+                "model": ev.get("model", "scripted"),
+            })
+        elif et == "concept_card":
+            # Generic concept / explainer card used for scenario-3 exhibit
+            # interrupts (Agent Network, RAG, ...). image_url should point
+            # to a baked asset under /static/scenes/concepts/.
+            self._bus.publish({
+                "type": "concept_card",
+                "title": ev.get("title", ""),
+                "subtitle": ev.get("subtitle", ""),
+                "body": ev.get("body", ""),
+                "image_url": ev.get("image_url", ""),
+                "tags": ev.get("tags", []),
+            })
+        elif et == "concept_card_dismiss":
+            self._bus.publish({"type": "concept_card_dismiss"})
+        elif et == "poi_choice":
+            # Simulate user tapping the 是/否 button on a POI card.
+            # Adds a user dialog turn (so it shows in the chat panel)
+            # and publishes a UI event so the card itself can flash.
+            choice = ev.get("choice", "yes")
+            poi_name = ev.get("poi_name", "")
+            text = ev.get("text") or (
+                f"好，带我去{poi_name}" if choice == "yes"
+                else f"这个先跳过")
+            self._dialog.append(role="user", text=text)
+            self._bus.publish({
+                "type": "poi_choice",
+                "choice": choice, "poi_name": poi_name})
+        elif et == "keepsake_url":
+            # Bypass keepsake_builder and surface a pre-rendered image URL
+            # (e.g. the scenario-3 baked route map).
+            self._bus.publish({
+                "type": "keepsake", "url": ev["url"]})
         elif et == "poi_card":
             poi = self._pois[ev["poi_id"]]
             # Prefer explicit image_url (e.g. real photo from /static)

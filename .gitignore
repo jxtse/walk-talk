@@ -35,3 +35,6 @@ Tests/LocalGravityTests/Fixtures/*.m4a
 
 # v2 prebake artifacts
 demo_runtime/cache/
+
+# Large scenario MP4s (exceed GitHub size limits — distribute separately)
+demo/static/scenes/*.mp4
