@@ -10,7 +10,8 @@ from demo.tools import to_openai_schema
 
 class AgentRuntime:
     def __init__(self, *, llm: LLMClient, tools: list, dialog: DialogLog,
-                 system_prompt: str, max_iterations: int = 8) -> None:
+                 system_prompt: str, max_iterations: int = 8,
+                 event_bus=None) -> None:
         self.llm = llm
         self.tools_by_name = {t.name: t for t in tools}
         self.tool_schemas = [to_openai_schema(t) for t in tools]
@@ -18,6 +19,7 @@ class AgentRuntime:
         self.system_prompt = system_prompt
         self.max_iterations = max_iterations
         self._lock = threading.Lock()  # serialize turns
+        self._bus = event_bus
 
     def _build_messages(self, extra_user_text: str | None) -> list[dict]:
         msgs: list[dict] = [{"role": "system", "content": self.system_prompt}]
@@ -59,6 +61,11 @@ class AgentRuntime:
                 } for tc in msg.tool_calls],
             })
             for tc in msg.tool_calls:
+                if self._bus is not None:
+                    self._bus.publish({
+                        "type": "tool_call", "source": "agent",
+                        "name": tc.name, "args": tc.arguments,
+                    })
                 tool = self.tools_by_name.get(tc.name)
                 if tool is None:
                     result: Any = {"error": f"unknown tool: {tc.name}"}
