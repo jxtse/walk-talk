@@ -100,30 +100,38 @@ class RecordMomentTool:
 
 @dataclass
 class PanCameraTool:
-    camera: Any
     name: str = "pan_camera"
-    description: str = ("控制相机方向。direction 可以是 left/right/up/down/center/"
-                        "zoom_in/zoom_out 或 sweep_room（环视一圈）。"
-                        "degrees 是步长，默认 20。")
+    description: str = (
+        "把相机转到一个方向看一眼。当你想引用画面里的东西、想确认方向、"
+        "或想给用户展示某个角度时，主动调它。reason 字段必须填，简短说明为什么转。"
+    )
     parameters: dict = field(default_factory=lambda: {
         "type": "object",
         "properties": {
-            "direction": {"type": "string"},
-            "degrees": {"type": "integer", "default": 20},
+            "direction": {
+                "type": "string",
+                "enum": ["left", "right", "up", "down", "center",
+                         "zoom_in", "zoom_out"],
+            },
+            "step": {"type": "integer", "default": 20,
+                     "description": "步长，pan/tilt 通常 10-30，zoom 5-15"},
+            "reason": {"type": "string",
+                       "description": "为什么要转，例如：用户提到湖，先看一眼"},
         },
-        "required": ["direction"],
+        "required": ["direction", "reason"],
     })
+    camera: Any = None
+
+    def run(self, *, direction: str, reason: str, step: int = 20) -> dict:
+        _ = reason
+        return self.camera.move(direction, step=step)
 
     def invoke(self, args: dict) -> dict:
-        direction = args["direction"]
-        if direction == "sweep_room":
-            self.camera.sweep()
-            return {"status": "ok", "action": "swept"}
-        degrees = int(args.get("degrees", 20))
-        pos = self.camera.move(direction, degrees)
-        return {"status": "ok", "position": {"pan": pos.pan,
-                                              "tilt": pos.tilt,
-                                              "zoom": pos.zoom}}
+        return self.run(
+            direction=args["direction"],
+            reason=args.get("reason", ""),
+            step=int(args.get("step", 20)),
+        )
 
 
 class RecommendNearbyPlaceTool:

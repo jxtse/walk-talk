@@ -63,17 +63,10 @@ def test_record_moment_writes_jpeg_and_logs(tmp_path):
     assert moments[0].label == "好看"
 
 
-def test_pan_camera_sweep_calls_camera_sweep():
-    cam = _fake_camera()
-    out = PanCameraTool(camera=cam).invoke({"direction": "sweep_room"})
-    cam.sweep.assert_called_once()
-    assert out["status"] == "ok"
-
-
 def test_pan_camera_left_calls_move():
     cam = _fake_camera()
-    PanCameraTool(camera=cam).invoke({"direction": "left", "degrees": 30})
-    cam.move.assert_called_once_with("left", 30)
+    PanCameraTool(camera=cam).invoke({"direction": "left", "step": 30, "reason": "test"})
+    cam.move.assert_called_once_with("left", step=30)
 
 
 def test_recommend_nearby_place_returns_unique_each_call(tmp_path):
