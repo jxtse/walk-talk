@@ -66,8 +66,9 @@ class AmapClient:
         self._key = key
         self._bus = event_bus
         self._base = base_url.rstrip("/")
-        # 高德是公网，需要走系统代理 -> trust_env=True
-        self._http = http or httpx.Client(timeout=timeout, trust_env=True)
+        # 高德是国内公网，但本机的 Clash/v2ray 代理（127.0.0.1:7897）会把它当海外
+        # 流量路由出去导致 SSL UNEXPECTED_EOF。直连即可：trust_env=False。
+        self._http = http or httpx.Client(timeout=timeout, trust_env=False)
 
     def search_around(self, *, location: str, keywords: str,
                       radius: int = 2000, offset: int = 20) -> list[POI]:
