@@ -1,0 +1,44 @@
+{
+  "scripted": [
+    {
+      "poi_id": "beans_solo",
+      "name": "Beans Solo 豆号咖啡(玄武湖国展店)",
+      "location": [118.787, 32.080],
+      "distance_m": 1040,
+      "rating": 4.4,
+      "cost": 23.0,
+      "address": "玄武湖翠洲门进园 · 芙蓉桥旁",
+      "tagline": "藏在湖边木屋里的独立咖啡，靠水那张桌子常常没人",
+      "image_id": "beans_solo_storefront",
+      "alt_image_id": "beans_solo_interior",
+      "typecode": "050500"
+    },
+    {
+      "poi_id": "jiming_temple",
+      "name": "鸡鸣寺",
+      "location": [118.794, 32.066],
+      "distance_m": 800,
+      "rating": 4.6,
+      "cost": null,
+      "address": "鸡鸣寺路 1 号",
+      "tagline": "南朝四百八十寺，剩下的那几座之一",
+      "image_id": "jiming_temple_card",
+      "alt_image_id": null,
+      "typecode": "110200"
+    }
+  ],
+  "amap_queries": [
+    {
+      "name": "xuanwu_indie_cafe",
+      "location": "118.795,32.075",
+      "keywords": "咖啡|甜品|手工冰淇淋|小酒馆",
+      "radius": 2500
+    },
+    {
+      "name": "xuanwu_landmarks",
+      "location": "118.795,32.075",
+      "keywords": "鸡鸣寺|紫峰大厦",
+      "radius": 3000
+    }
+  ]
+}
