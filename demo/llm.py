@@ -34,7 +34,16 @@ class LLMClient:
         headers: dict[str, str] = {"content-type": "application/json"}
         if api_key:
             headers["authorization"] = f"Bearer {api_key}"
-        self._http = httpx.Client(timeout=timeout, headers=headers)
+        # The internal endpoint sits on Tailscale (100.64/10) and must NOT be
+        # routed through any system proxy (Clash/v2ray on 127.0.0.1:7897 will
+        # forward it to the public internet and get a 502). Pass an explicit
+        # ``trust_env=False`` so httpx ignores HTTP(S)_PROXY env vars and the
+        # Windows registry proxy.
+        self._http = httpx.Client(
+            timeout=timeout,
+            headers=headers,
+            trust_env=False,
+        )
 
     def chat(self, *, messages: list[dict], tools: list[dict],
              model: str | None = None) -> AssistantMessage:
