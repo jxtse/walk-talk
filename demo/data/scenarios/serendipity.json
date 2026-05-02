@@ -1,0 +1,19 @@
+{
+  "scenario_id": "serendipity",
+  "title": "偶遇推荐",
+  "duration_s": 60,
+  "events": [
+    {"at": 0.0, "type": "dialog", "role": "ai", "text": "走着走着……", "speak": true},
+    {"at": 10.0, "type": "dialog", "role": "ai", "text": "你左边 100m 那家叫豆号的小咖啡，藏在湖边木屋里，靠水那张桌子常常没人，要不要去坐坐？", "speak": true},
+    {"at": 11.0, "type": "poi_card", "poi_id": "beans_solo"},
+    {"at": 11.5, "type": "direction", "arrow": "left", "distance_m": 100, "eta_min": 1, "label": "Beans Solo 豆号咖啡"},
+    {"at": 25.0, "type": "dialog", "role": "user", "text": "长什么样？"},
+    {"at": 26.0, "type": "poi_image_swap", "poi_id": "beans_solo", "to_image_id": "beans_solo_interior"},
+    {"at": 27.0, "type": "dialog", "role": "ai", "text": "里面是这样，木桌临窗，吧台后那位在做手冲。", "speak": true},
+    {"at": 40.0, "type": "dialog", "role": "user", "text": "走吧"},
+    {"at": 41.0, "type": "tool_call", "name": "pan_camera", "args": {"direction": "left", "reason": "看一眼咖啡馆方向"}},
+    {"at": 41.2, "type": "ptz", "pan": -25, "tilt": 0, "zoom": 100, "source": "script"},
+    {"at": 55.0, "type": "dialog", "role": "ai", "text": "到了，门口排了 3 个人。", "speak": true},
+    {"at": 58.0, "type": "keepsake_render", "image_id": "serendipity_keepsake"}
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "scenario_id": "companion",
+  "title": "陪伴散步",
+  "duration_s": 90,
+  "events": [
+    {"at": 0.0, "type": "dialog", "role": "ai", "text": "早，今天玄武湖风不大，往湖边走走？", "speak": true},
+    {"at": 8.0, "type": "tool_call", "name": "pan_camera", "args": {"direction": "left", "reason": "看湖"}},
+    {"at": 8.2, "type": "ptz", "pan": -30, "tilt": 0, "zoom": 100, "source": "script"},
+    {"at": 12.0, "type": "dialog", "role": "ai", "text": "看，对面紫峰大厦还在云里。", "speak": true},
+    {"at": 18.0, "type": "dialog", "role": "user", "text": "那是什么塔？"},
+    {"at": 19.5, "type": "tool_call", "name": "analyze_frame_vlm", "args": {"question": "画面右侧那座塔是什么"}},
+    {"at": 22.0, "type": "dialog", "role": "ai", "text": "鸡鸣寺的药师塔，南朝四百八十寺剩下的之一。", "speak": true},
+    {"at": 35.0, "type": "poi_card", "poi_id": "jiming_temple"},
+    {"at": 36.0, "type": "dialog", "role": "ai", "text": "要不要绕过去？走过去 8 分钟。", "speak": true},
+    {"at": 50.0, "type": "dialog", "role": "user", "text": "记一下"},
+    {"at": 51.0, "type": "tool_call", "name": "record_moment", "args": {"label": "鸡鸣寺·下次再来"}},
+    {"at": 51.5, "type": "moment", "label": "鸡鸣寺·下次再来"},
+    {"at": 65.0, "type": "dialog", "role": "ai", "text": "我转一圈给你看看。", "speak": true},
+    {"at": 66.0, "type": "ptz_sweep"},
+    {"at": 85.0, "type": "keepsake_render", "image_id": "companion_keepsake"}
+  ]
+}
