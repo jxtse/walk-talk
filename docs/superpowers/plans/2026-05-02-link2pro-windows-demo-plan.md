@@ -9,13 +9,13 @@
 **Tech Stack:** Python 3.12, FastAPI + uvicorn, comtypes (DirectShow IAMCameraControl), pygrabber (device enum), ffmpeg (dshow MJPEG capture), pyttsx3 (Windows SAPI TTS), Pillow (keepsake collage), httpx (LLM client), pytest.
 
 **Reference spec:** `docs/superpowers/specs/2026-05-02-link2pro-windows-demo-design.md`
-**Reference impl:** `ptz_server_win.py` (working camera + PTZ proof; we copy its DirectShow logic).
+**Reference impl:** `insta360_sdk_ref/ptz_server_win.py` (working camera + PTZ proof; we copy its DirectShow logic).
 
 ---
 
 ## File Structure
 
-All new code lives under `demo/`. Existing files (`ptz_server_win.py`, Swift sources, etc.) are untouched.
+All new code lives under `demo/`. Existing files (`insta360_sdk_ref/ptz_server_win.py`, Swift sources, etc.) are untouched.
 
 ```
 demo/
@@ -369,9 +369,9 @@ git commit -m "demo: DialogLog + MomentLog with subscribe pattern"
 
 ---
 
-## Task 4: CameraController (extracted from ptz_server_win.py)
+## Task 4: CameraController (extracted from insta360_sdk_ref/ptz_server_win.py)
 
-This is a refactor of the existing `ptz_server_win.py` into a single class with a clean public API. **No behavior change.** I/O-bound, not unit-tested — verified by running the smoke script in step 3.
+This is a refactor of the existing `insta360_sdk_ref/ptz_server_win.py` into a single class with a clean public API. **No behavior change.** I/O-bound, not unit-tested — verified by running the smoke script in step 3.
 
 **Files:**
 - Create: `demo/camera.py`
@@ -379,7 +379,7 @@ This is a refactor of the existing `ptz_server_win.py` into a single class with 
 
 - [ ] **Step 1: Implement `demo/camera.py`**
 
-Copy the full module contents from `ptz_server_win.py` lines 49-260, refactored into a `CameraController` class with this exact public surface:
+Copy the full module contents from `insta360_sdk_ref/ptz_server_win.py` lines 49-260, refactored into a `CameraController` class with this exact public surface:
 
 ```python
 @dataclass(frozen=True)
@@ -411,7 +411,7 @@ class CameraController:
 
 Internal structure (one PTZ worker thread for COM, one ffmpeg I/O thread for frames). Frames stored in a `deque[Frame]`, evicted older than `FRAME_WINDOW_SECONDS`. Use `threading.Condition` to wake the MJPEG iterator. Direction strings for `move`: `left/right/up/down/center/zoom_in/zoom_out`. `find_ffmpeg()` helper checks `shutil.which("ffmpeg")` then `C:\ffmpeg\bin\ffmpeg.exe`.
 
-The DirectShow `IAMCameraControl` definition, the `_PTZWorker` thread class, `_spawn_ffmpeg`, and `_camera_loop` are direct ports of `ptz_server_win.py` — copy them verbatim into the module.
+The DirectShow `IAMCameraControl` definition, the `_PTZWorker` thread class, `_spawn_ffmpeg`, and `_camera_loop` are direct ports of `insta360_sdk_ref/ptz_server_win.py` — copy them verbatim into the module.
 
 - [ ] **Step 2: Write smoke script `scripts/smoke_camera.py`**
 

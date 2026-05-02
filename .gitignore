@@ -1,6 +1,9 @@
 .superpowers/
 .DS_Store
 *.swp
+__pycache__/
+*.pyc
+.venv/
 
 # Xcode (when migrating to .xcodeproj)
 build/
