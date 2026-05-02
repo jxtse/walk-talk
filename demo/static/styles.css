@@ -1,0 +1,196 @@
+:root {
+  --green: #7BC67E;
+  --green-dark: #5DA561;
+  --bg: #F4F1EC;
+  --panel: #FFFFFF;
+  --tech-bg: #1A1F26;
+  --tech-panel: #232932;
+  --tech-text: #C9D1D9;
+  --tech-muted: #6E7681;
+  --user-bubble: #E8F5E9;
+  --ai-bubble: #FFFFFF;
+  --shadow: 0 8px 32px rgba(0,0,0,.12);
+  font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--bg); }
+body { display: flex; gap: 24px; padding: 24px; overflow: hidden; }
+
+/* ======== iPhone mock 左侧 ======== */
+.iphone {
+  width: 393px; height: 852px; flex-shrink: 0;
+  background: #fff; border-radius: 48px;
+  border: 8px solid #1A1F26; box-shadow: var(--shadow);
+  position: relative; overflow: hidden;
+  display: flex; flex-direction: column;
+}
+.iphone .status-bar {
+  height: 47px; padding: 12px 28px 0;
+  display: flex; justify-content: space-between; align-items: flex-start;
+  font-size: 15px; font-weight: 600;
+}
+.iphone .notch {
+  position: absolute; top: 8px; left: 50%; transform: translateX(-50%);
+  width: 120px; height: 28px; background: #1A1F26; border-radius: 18px;
+}
+.iphone .home-indicator {
+  position: absolute; bottom: 8px; left: 50%; transform: translateX(-50%);
+  width: 134px; height: 5px; background: #1A1F26; border-radius: 3px;
+}
+.iphone-content {
+  flex: 1; padding: 8px 16px 24px; display: flex; flex-direction: column;
+  gap: 12px; overflow: hidden;
+}
+.app-title { font-size: 17px; font-weight: 700; padding: 4px 4px 0; }
+
+/* 对话气泡区 */
+.dialog-area {
+  flex: 1; overflow-y: auto; padding: 8px 4px; display: flex;
+  flex-direction: column; gap: 10px;
+}
+.bubble {
+  max-width: 80%; padding: 10px 14px; border-radius: 16px;
+  font-size: 15px; line-height: 1.45; word-wrap: break-word;
+  animation: bubble-in .3s ease;
+}
+@keyframes bubble-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.bubble.ai { background: var(--ai-bubble); align-self: flex-start;
+             border: 1px solid #E5E7EB; }
+.bubble.user { background: var(--green); color: #fff;
+               align-self: flex-end; }
+
+/* POI 卡片 */
+.poi-card {
+  background: #fff; border-radius: 16px; overflow: hidden;
+  box-shadow: var(--shadow); margin: 8px 0;
+  animation: bubble-in .3s ease;
+}
+.poi-card .poi-img {
+  width: 100%; height: 160px; object-fit: cover; display: block;
+}
+.poi-card .poi-body { padding: 12px 14px; }
+.poi-card .poi-name { font-size: 16px; font-weight: 700; margin-bottom: 4px; }
+.poi-card .poi-meta { font-size: 13px; color: #6B7280; margin-bottom: 8px; }
+.poi-card .poi-tag { font-size: 13px; color: #4B5563; margin-bottom: 12px; }
+.poi-card .poi-actions { display: flex; gap: 8px; }
+.poi-card .poi-actions button {
+  flex: 1; padding: 10px; border-radius: 10px; border: 0;
+  font-size: 14px; cursor: pointer;
+}
+.poi-card .btn-go { background: var(--green); color: #fff; }
+.poi-card .btn-chat { background: transparent; color: var(--green);
+                     border: 1px solid var(--green); }
+
+/* 方向浮条 */
+.direction-bar {
+  background: rgba(123,198,126,.95); color: #fff; padding: 10px 14px;
+  border-radius: 12px; font-size: 14px; font-weight: 600;
+  display: flex; align-items: center; gap: 12px;
+  animation: bubble-in .3s ease;
+}
+.direction-bar .arrow { font-size: 20px; }
+
+/* Flash banner */
+.flash {
+  position: absolute; top: 60px; left: 50%; transform: translateX(-50%);
+  background: rgba(26,31,38,.92); color: #fff; padding: 10px 18px;
+  border-radius: 24px; font-size: 14px; opacity: 0;
+  transition: opacity .3s; pointer-events: none; z-index: 10;
+}
+.flash.show { opacity: 1; }
+
+/* keepsake 渲染区 */
+.keepsake { border-radius: 16px; overflow: hidden;
+            box-shadow: var(--shadow); margin: 8px 0; }
+.keepsake img { display: block; width: 100%; }
+
+/* 输入栏 */
+.input-bar {
+  display: flex; gap: 8px; align-items: center;
+  background: #F3F4F6; border-radius: 24px; padding: 8px 12px;
+}
+.input-bar input {
+  flex: 1; border: 0; background: transparent; font-size: 15px;
+  outline: none; padding: 6px 0;
+}
+.input-bar button {
+  border: 0; background: var(--green); color: #fff;
+  width: 36px; height: 36px; border-radius: 50%; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 16px;
+}
+.input-bar .mic { background: #E5E7EB; color: #1F2937; }
+.input-bar .mic.recording { background: #DC2626; color: #fff;
+                            animation: pulse 1s infinite; }
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .5; } }
+
+.session-btns { display: flex; gap: 8px; padding: 0 4px; }
+.session-btns button {
+  flex: 1; padding: 12px; border-radius: 12px; border: 0;
+  font-size: 15px; font-weight: 600; cursor: pointer;
+}
+.session-btns .start { background: var(--green); color: #fff; }
+.session-btns .end { background: #F3F4F6; color: #1F2937; }
+
+/* ======== 技术面板 右侧 ======== */
+.tech {
+  flex: 1; min-width: 480px; background: var(--tech-bg);
+  border-radius: 16px; padding: 20px; overflow-y: auto;
+  display: flex; flex-direction: column; gap: 14px;
+  color: var(--tech-text); font-family: ui-monospace, "SF Mono",
+    Consolas, monospace; font-size: 13px;
+}
+.tech h2 {
+  margin: 0; font-size: 11px; text-transform: uppercase;
+  letter-spacing: .08em; color: var(--tech-muted); font-family: inherit;
+}
+.tech-block {
+  background: var(--tech-panel); border-radius: 10px; padding: 12px;
+  display: flex; flex-direction: column; gap: 8px;
+}
+.tech-block.collapsible summary {
+  cursor: pointer; font-weight: 600; color: var(--tech-text);
+  list-style: none; display: flex; justify-content: space-between;
+}
+.tech-block.collapsible summary::after {
+  content: "▾"; transition: transform .2s;
+}
+.tech-block.collapsible[open] summary::after { transform: rotate(180deg); }
+
+.scenario-btns { display: flex; gap: 8px; flex-wrap: wrap; }
+.scenario-btns button {
+  padding: 8px 12px; border-radius: 8px; border: 1px solid var(--green);
+  background: transparent; color: var(--green); cursor: pointer;
+  font-size: 13px; font-family: inherit;
+}
+.scenario-btns button:hover { background: rgba(123,198,126,.12); }
+.scenario-btns button.stop { border-color: #DC2626; color: #DC2626; }
+
+.cam-frame {
+  background: #000; border-radius: 8px; overflow: hidden;
+  aspect-ratio: 16/9;
+}
+.cam-frame img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.ptz-readout { display: flex; gap: 16px; font-variant-numeric: tabular-nums; }
+.ptz-readout span { color: var(--tech-muted); }
+.ptz-readout b { color: var(--green); margin-left: 4px; }
+
+.log-list {
+  max-height: 200px; overflow-y: auto; display: flex;
+  flex-direction: column; gap: 4px; font-size: 12px;
+}
+.log-row {
+  display: flex; gap: 8px; padding: 4px 0;
+  border-bottom: 1px solid rgba(255,255,255,.05);
+}
+.log-row .ts { color: var(--tech-muted); flex-shrink: 0; }
+.log-row .name { color: var(--green); flex-shrink: 0; }
+.log-row .src { color: var(--tech-muted); font-size: 11px; }
+.raw-pre {
+  background: #0D1117; padding: 10px; border-radius: 6px;
+  font-size: 11px; max-height: 240px; overflow: auto;
+  white-space: pre-wrap; word-break: break-all; margin: 0;
+}
