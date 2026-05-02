@@ -7,3 +7,4 @@ pygrabber==0.2
 comtypes==1.4.16
 pytest==8.3.3
 pytest-asyncio==0.24.0
+python-multipart==0.0.12
