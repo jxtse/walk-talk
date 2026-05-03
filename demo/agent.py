@@ -2,7 +2,7 @@
 from __future__ import annotations
 import json
 import threading
-from typing import Any
+from typing import Any, Callable
 from demo.dialog import DialogLog
 from demo.llm import AssistantMessage, LLMClient
 from demo.tools import to_openai_schema
@@ -10,16 +10,28 @@ from demo.tools import to_openai_schema
 
 class AgentRuntime:
     def __init__(self, *, llm: LLMClient, tools: list, dialog: DialogLog,
-                 system_prompt: str, max_iterations: int = 8,
+                 system_prompt: str | Callable[[], str],
+                 max_iterations: int = 8,
                  event_bus=None) -> None:
         self.llm = llm
         self.tools_by_name = {t.name: t for t in tools}
         self.tool_schemas = [to_openai_schema(t) for t in tools]
         self.dialog = dialog
-        self.system_prompt = system_prompt
+        self._system_prompt = system_prompt
         self.max_iterations = max_iterations
         self._lock = threading.Lock()  # serialize turns
         self._bus = event_bus
+
+    @property
+    def system_prompt(self) -> str:
+        sp = self._system_prompt
+        if callable(sp):
+            try:
+                return sp()
+            except Exception as e:  # noqa: BLE001
+                print(f"[agent] system_prompt callable failed: {e}")
+                return ""
+        return sp or ""
 
     def _build_messages(self, extra_user_text: str | None) -> list[dict]:
         msgs: list[dict] = [{"role": "system", "content": self.system_prompt}]

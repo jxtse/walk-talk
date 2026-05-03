@@ -99,6 +99,7 @@ function handleAction(el) {
   }
   if (action === 'freemode') {
     fetch('/api/script/stop', { method: 'POST' });
+    requestAndPushLocation();
     fetch('/api/start', { method: 'POST' });
     setSceneVideo(null);
     setStopBtn(false);
@@ -465,6 +466,40 @@ function setSceneVideo(scenario, opts) {
   }
 }
 
+// ============ 定位上报（自由模式用） ============
+function pushLocation(lng, lat) {
+  return fetch('/api/location', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ lng, lat }),
+  }).then(r => r.json()).then(d => {
+    if (d.location) {
+      const el = document.getElementById('loc-readout');
+      if (el) el.textContent = d.location;
+      showFlash('定位已更新：' + d.location, 1400);
+    }
+    return d;
+  });
+}
+function requestAndPushLocation() {
+  if (!navigator.geolocation) {
+    console.warn('[loc] no geolocation API, using server default');
+    return;
+  }
+  navigator.geolocation.getCurrentPosition(
+    (pos) => {
+      const lng = pos.coords.longitude;
+      const lat = pos.coords.latitude;
+      pushLocation(lng, lat).catch(e => console.warn('[loc] push failed', e));
+    },
+    (err) => {
+      console.warn('[loc] geolocation denied/failed:', err.message);
+      showFlash('未拿到 GPS，使用默认定位', 1600);
+    },
+    { enableHighAccuracy: false, timeout: 5000, maximumAge: 60000 },
+  );
+}
+
 // ============ SSE ============
 const es = new EventSource('/events');
 es.onmessage = (e) => {
@@ -525,6 +560,11 @@ es.onmessage = (e) => {
     case 'concept_card':         showConceptCard(ev); break;
     case 'concept_card_dismiss': hideConceptCard(); break;
     case 'poi_choice':           simulatePoiChoice(ev); break;
+    case 'location_update': {
+      const el = document.getElementById('loc-readout');
+      if (el) el.textContent = ev.location || '-';
+      break;
+    }
   }
 };
 
@@ -557,6 +597,7 @@ $$('.scenario-btns button[data-scenario]').forEach(btn => {
     const scenario = btn.dataset.scenario;
     if (scenario === 'free') {
       await fetch('/api/script/stop', { method: 'POST' });
+      requestAndPushLocation();
       await fetch('/api/start', { method: 'POST' });
       setSceneVideo(null);
       setStopBtn(false);
@@ -643,3 +684,20 @@ micBtn.onclick = () => {
 // ============ init ============
 // 默认场景：进入 s3 前会通过 selectRoute 切换覆盖层
 
+// 启动时拉一次当前服务端定位，显示在 tech 面板
+fetch('/api/location').then(r => r.json()).then(d => {
+  const el = document.getElementById('loc-readout');
+  if (el && d.location) el.textContent = d.location;
+}).catch(() => {});
+
+const locSetBtn = document.getElementById('loc-set');
+const locGpsBtn = document.getElementById('loc-gps');
+const locInput = document.getElementById('loc-input');
+if (locSetBtn) locSetBtn.onclick = () => {
+  const v = (locInput.value || '').trim();
+  if (!v.includes(',')) { showFlash('需要 lng,lat 格式'); return; }
+  const [lng, lat] = v.split(',').map(s => parseFloat(s.trim()));
+  if (!isFinite(lng) || !isFinite(lat)) { showFlash('坐标解析失败'); return; }
+  pushLocation(lng, lat).catch(e => showFlash('上传失败：' + e.message));
+};
+if (locGpsBtn) locGpsBtn.onclick = () => requestAndPushLocation();

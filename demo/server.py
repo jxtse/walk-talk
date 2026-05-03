@@ -20,13 +20,19 @@ from demo.tts import TTSService
 from demo.tools import (
     GetCameraFrameTool, AnalyzeFrameVLMTool, SpeakToUserTool,
     RecordMomentTool, PanCameraTool, RecommendNearbyPlaceTool,
+    SearchAroundTool, LookupPlaceTool, SearchXhsTool,
+    RecommendPoiCardTool, ShowConceptCardTool,
 )
 from demo.agent import AgentRuntime
 from demo.keepsake import KeepsakeBuilder
-from demo.prompts import SYSTEM_PROMPT, PROACTIVE_PROMPT
+from demo.prompts import (
+    SYSTEM_PROMPT, PROACTIVE_PROMPT,
+    FREE_MODE_SYSTEM_PROMPT, FREE_MODE_GREETING,
+)
 from demo.event_bus import EventBus
 from demo.media import MediaClient
 from demo.amap import AmapClient
+from demo.xhs import XhsClient
 from demo.scripts_player import ScriptPlayer
 from demo.config import load_config
 
@@ -55,6 +61,7 @@ keepsake_builder = KeepsakeBuilder()
 event_bus: EventBus = None  # type: ignore[assignment]
 media_client: MediaClient = None  # type: ignore[assignment]
 amap_client: AmapClient = None  # type: ignore[assignment]
+xhs_client: XhsClient = None  # type: ignore[assignment]
 script_player: ScriptPlayer = None  # type: ignore[assignment]
 config = None
 _loop: asyncio.AbstractEventLoop | None = None
@@ -62,14 +69,32 @@ proactive_thread: threading.Thread | None = None
 session_active = threading.Event()
 _initialized = False
 
+# 自由模式当前定位（"lng,lat"）。/api/location 更新它，工具构造时拿
+# 一个闭包读取，所以无需重建工具。
+current_location: str = "118.797,32.075"
+_location_lock = threading.Lock()
+
+
+def get_current_location() -> str:
+    with _location_lock:
+        return current_location
+
+
+def set_current_location(value: str) -> None:
+    global current_location
+    with _location_lock:
+        current_location = value
+
 
 def _init_singletons() -> None:
     """Build all singletons. Idempotent. Called at module import so the
     objects exist regardless of whether the lifespan/startup hook fires
     (which TestClient won't run without a context manager)."""
     global camera, dialog, moments, tts, llm, agent
-    global event_bus, media_client, amap_client, script_player, config
+    global event_bus, media_client, amap_client, xhs_client
+    global script_player, config
     global BASE_RUNTIME, SESSION_DIR, CACHE_IMAGES_DIR, _initialized
+    global current_location
 
     if _initialized:
         return
@@ -78,9 +103,11 @@ def _init_singletons() -> None:
     SESSION_DIR = BASE_RUNTIME
     CACHE_IMAGES_DIR = BASE_RUNTIME / "cache" / "images"
     SESSION_DIR.mkdir(parents=True, exist_ok=True)
+    CACHE_IMAGES_DIR.mkdir(parents=True, exist_ok=True)
 
     event_bus = EventBus()
     config = load_config()
+    set_current_location(config.default_location)
 
     camera = CameraController()
     dialog = DialogLog()
@@ -89,6 +116,7 @@ def _init_singletons() -> None:
     llm = LLMClient()
     media_client = MediaClient(api_key=config.openai_next_api_key)
     amap_client = AmapClient(key=config.amap_key, event_bus=event_bus)
+    xhs_client = XhsClient(xhs_path=config.xhs_cli_path)
 
     # Wrap camera.set_position so PTZ moves emit a 'ptz' SSE event.
     _orig_set_position = camera.set_position
@@ -130,9 +158,34 @@ def _init_singletons() -> None:
         RecommendNearbyPlaceTool(
             poi_path=ROOT / "data" / "nanjing_pois.json",
             event_bus=event_bus),
+        SearchAroundTool(amap=amap_client,
+                         location_provider=get_current_location),
+        LookupPlaceTool(amap=amap_client, xhs=xhs_client,
+                        media=media_client,
+                        cache_dir=CACHE_IMAGES_DIR,
+                        location_provider=get_current_location,
+                        event_bus=event_bus),
+        SearchXhsTool(xhs=xhs_client),
+        RecommendPoiCardTool(amap=amap_client, xhs=xhs_client,
+                             media=media_client,
+                             cache_dir=CACHE_IMAGES_DIR,
+                             event_bus=event_bus),
+        ShowConceptCardTool(amap=amap_client, xhs=xhs_client,
+                            media=media_client,
+                            cache_dir=CACHE_IMAGES_DIR,
+                            event_bus=event_bus),
     ]
+
+    def _dynamic_system_prompt() -> str:
+        loc = get_current_location()
+        return (
+            f"{FREE_MODE_SYSTEM_PROMPT}\n\n"
+            f"# 当前定位（lng,lat）\n{loc}\n"
+        )
+
     agent = AgentRuntime(llm=llm, tools=tools, dialog=dialog,
-                         system_prompt=SYSTEM_PROMPT, event_bus=event_bus)
+                         system_prompt=_dynamic_system_prompt,
+                         event_bus=event_bus)
 
     def _keepsake_render(image_id: str) -> None:
         try:
@@ -220,12 +273,36 @@ async def start_session():
         proactive_thread = threading.Thread(
             target=_proactive_loop, daemon=True, name="proactive")
         proactive_thread.start()
-        greeting = (
-            "（用户刚按下「开始散步」按钮，请简短打招呼并说明今天我们就在玄武湖周边走一圈。）"
-        )
         asyncio.get_event_loop().run_in_executor(
-            None, agent.handle_user_turn, greeting)
+            None, agent.handle_user_turn, FREE_MODE_GREETING)
     return {"status": "ok"}
+
+
+@app.post("/api/location")
+async def update_location(req: Request):
+    body = await req.json()
+    # 支持 {lat, lng} 或 {location: "lng,lat"}
+    if "location" in body and isinstance(body["location"], str):
+        loc = body["location"].strip()
+    else:
+        try:
+            lat = float(body.get("lat"))
+            lng = float(body.get("lng"))
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400,
+                                detail="need {lat, lng} or {location:'lng,lat'}")
+        loc = f"{lng:.6f},{lat:.6f}"
+    set_current_location(loc)
+    try:
+        event_bus.publish({"type": "location_update", "location": loc})
+    except Exception:
+        pass
+    return {"status": "ok", "location": loc}
+
+
+@app.get("/api/location")
+async def get_location():
+    return {"location": get_current_location()}
 
 
 @app.post("/api/say")
@@ -316,7 +393,12 @@ def poi_image(name: str):
     p = CACHE_IMAGES_DIR / name
     if not p.exists():
         raise HTTPException(status_code=404, detail="not found")
-    return FileResponse(p, media_type="image/png")
+    ext = p.suffix.lower()
+    media = {
+        ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+        ".webp": "image/webp", ".gif": "image/gif",
+    }.get(ext, "application/octet-stream")
+    return FileResponse(p, media_type=media)
 
 
 @app.post("/api/end")

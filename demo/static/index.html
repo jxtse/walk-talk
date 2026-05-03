@@ -257,6 +257,19 @@
   </div>
 
   <div class="tech-block">
+    <h2>定位（自由模式）</h2>
+    <div class="ptz-readout">
+      <span>当前 <b id="loc-readout">-</b></span>
+    </div>
+    <div style="display:flex;gap:6px;margin-top:6px;">
+      <input id="loc-input" placeholder="lng,lat 例如 121.490,31.235"
+             style="flex:1;padding:4px 6px;font-size:12px;" />
+      <button id="loc-set">设置</button>
+      <button id="loc-gps">GPS</button>
+    </div>
+  </div>
+
+  <div class="tech-block">
     <h2>工具调用</h2>
     <div class="log-list" id="tool-log"></div>
   </div>
